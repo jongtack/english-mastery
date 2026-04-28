@@ -1,66 +1,477 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useAppStore } from '@/store/useAppStore';
+import { Calendar as CalendarIcon, PenTool, Sparkles, CheckCircle2, History, ChevronLeft, ChevronRight, BarChart3, Trash2, RefreshCcw } from 'lucide-react';
+import { 
+  format, 
+  startOfMonth, 
+  endOfMonth, 
+  startOfWeek, 
+  endOfWeek, 
+  eachDayOfInterval, 
+  isSameMonth, 
+  isSameDay, 
+  addMonths, 
+  subMonths,
+  getYear
+} from 'date-fns';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 export default function Home() {
+  const { 
+    topic, setTopic, 
+    koreanText, setKoreanText, 
+    englishText, setEnglishText, 
+    feedbackData, setFeedbackData, 
+    isSubmitting, setIsSubmitting, 
+    reset 
+  } = useAppStore();
+  
+  const [view, setView] = useState<'practice' | 'history' | 'analytics'>('practice');
+  const [historyData, setHistoryData] = useState<any[]>([]);
+  
+  // Calendar States
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+
+  useEffect(() => {
+    if (!topic && view === 'practice') {
+      fetchTopic();
+    }
+  }, [view]);
+
+  useEffect(() => {
+    if (view === 'history' || view === 'analytics') {
+      loadHistory();
+      if (view === 'history' && !selectedDate) {
+        setSelectedDate(new Date());
+      }
+    }
+  }, [view]);
+
+  const fetchTopic = async () => {
+    setTopic(''); // Reset topic to show loading state
+    try {
+      const res = await fetch('/api/topic');
+      const data = await res.json();
+      if (data.topic) {
+        setTopic(data.topic);
+      } else if (data.error) {
+        alert("Error fetching topic: " + data.error);
+        setTopic("Failed to load topic. Please check API Key.");
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Network error fetching topic.");
+      setTopic("Network Error");
+    }
+  };
+
+  const loadHistory = async () => {
+    try {
+      const res = await fetch('/api/history');
+      const data = await res.json();
+      if (data.practices) {
+        setHistoryData(data.practices);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (koreanText.trim().length === 0 || englishText.trim().length === 0) {
+      alert("한국어 원문과 영어 번역문을 모두 입력해 주세요.");
+      return;
+    }
+    
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, koreanText, englishText })
+      });
+      const data = await res.json();
+      if (data.practice) {
+        setFeedbackData({
+          correctedText: data.practice.correctedText,
+          feedback: data.practice.feedback,
+          score: data.practice.score
+        });
+      } else if (data.error) {
+        alert("Error: " + data.error);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("제출 중 오류가 발생했습니다.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("정말 이 작문 기록을 삭제하시겠습니까?")) return;
+    try {
+      const res = await fetch(`/api/practice/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        alert("기록이 성공적으로 삭제되었습니다.");
+        loadHistory();
+      } else {
+        alert("삭제에 실패했습니다: " + data.error);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("삭제 중 오류가 발생했습니다.");
+    }
+  };
+
+  // Calendar Helpers
+  const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
+  const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
+  const onDateClick = (day: Date) => setSelectedDate(day);
+
+  const renderCalendar = () => {
+    const monthStart = startOfMonth(currentMonth);
+    const monthEnd = endOfMonth(monthStart);
+    const startDate = startOfWeek(monthStart);
+    const endDate = endOfWeek(monthEnd);
+
+    const dateFormat = "d";
+    const days = eachDayOfInterval({ start: startDate, end: endDate });
+
+    // Group practices by date string (YYYY-MM-DD)
+    const practiceCountsByDate: Record<string, number> = {};
+    historyData.forEach(prac => {
+      const d = format(new Date(prac.date), 'yyyy-MM-dd');
+      practiceCountsByDate[d] = (practiceCountsByDate[d] || 0) + 1;
+    });
+
+    return (
+      <div className="calendar-grid">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => (
+          <div key={i} className="calendar-day-header">{d}</div>
+        ))}
+        {days.map((day, i) => {
+          const dayKey = format(day, 'yyyy-MM-dd');
+          const count = practiceCountsByDate[dayKey] || 0;
+          const isSelected = selectedDate && isSameDay(day, selectedDate);
+          const isCurrentMonth = isSameMonth(day, monthStart);
+
+          return (
+            <div
+              key={i}
+              className={`calendar-cell ${!isCurrentMonth ? 'disabled' : ''} ${isSelected ? 'active' : ''}`}
+              onClick={() => onDateClick(day)}
+            >
+              <span style={{ fontWeight: isSelected ? 'bold' : 'normal', opacity: !isCurrentMonth ? 0.5 : 1 }}>
+                {format(day, dateFormat)}
+              </span>
+              {count > 0 && isCurrentMonth && (
+                <div className="calendar-badge">{count}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // Filter selected date's practices
+  const selectedDatePractices = selectedDate 
+    ? historyData.filter(prac => isSameDay(new Date(prac.date), selectedDate))
+    : [];
+
+  // Stats
+  const currentYear = getYear(currentMonth);
+  const thisYearPractices = historyData.filter(prac => getYear(new Date(prac.date)) === currentYear).length;
+  const thisMonthPractices = historyData.filter(prac => isSameMonth(new Date(prac.date), currentMonth)).length;
+
+  // Analytics Chart Data Preparation
+  const getChartData = () => {
+    // Sort practices by date ascending, take ones with score
+    const scoredPractices = historyData
+      .filter(prac => prac.score !== null && prac.score !== undefined)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      
+    return scoredPractices.map((prac, i) => ({
+      name: format(new Date(prac.date), 'MM/dd'),
+      score: prac.score,
+      topic: prac.topic
+    }));
+  };
+
+  const chartData = getChartData();
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
+    <main style={{ minHeight: '100vh', padding: '2rem 1rem' }}>
+      <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+        
+        {/* Header */}
+        <header className="glass-panel page-header">
+          <div className="header-title">
+            <PenTool size={28} color="var(--primary)" />
+            <h1 className="gradient-text" style={{ fontSize: '1.5rem', margin: 0 }}>English Mastery</h1>
+          </div>
+          <nav className="header-nav">
+            <button 
+              className={`btn-primary`} 
+              style={{ background: view === 'practice' ? '' : 'transparent', color: view === 'practice' ? '' : 'var(--foreground)', boxShadow: view === 'practice' ? '' : 'none', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+              onClick={() => setView('practice')}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
+              <PenTool size={18} /> Practice
+            </button>
+            <button 
+              className={`btn-primary`} 
+              style={{ background: view === 'history' ? '' : 'transparent', color: view === 'history' ? '' : 'var(--foreground)', boxShadow: view === 'history' ? '' : 'none', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+              onClick={() => setView('history')}
             >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+              <History size={18} /> History
+            </button>
+            <button 
+              className={`btn-primary`} 
+              style={{ background: view === 'analytics' ? '' : 'transparent', color: view === 'analytics' ? '' : 'var(--foreground)', boxShadow: view === 'analytics' ? '' : 'none', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+              onClick={() => setView('analytics')}
+            >
+              <BarChart3 size={18} /> Analytics
+            </button>
+          </nav>
+        </header>
+
+        {view === 'practice' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            {/* Topic Section */}
+            <section className="glass-panel panel-content" style={{ textAlign: 'center', position: 'relative' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                <h2 style={{ fontSize: '1.2rem', color: 'var(--secondary)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Today's Topic</h2>
+                <button 
+                  onClick={fetchTopic} 
+                  disabled={!topic}
+                  style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: '0.25rem', opacity: topic ? 1 : 0.5 }}
+                  title="Generate new topic"
+                >
+                  <RefreshCcw size={18} className={!topic ? 'animate-spin' : ''} />
+                </button>
+              </div>
+              
+              {topic ? (
+                <p style={{ fontSize: '1.8rem', fontWeight: '600', lineHeight: 1.4 }}>"{topic}"</p>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', height: '60px' }}>
+                  <Sparkles className="animate-spin" /> Generating topic...
+                </div>
+              )}
+            </section>
+
+            {/* Writing Section */}
+            <section className="glass-panel panel-content">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label style={{ fontWeight: 600, color: 'var(--accent)', fontSize: '1.1rem' }}>1. 한국어 원문 작성</label>
+                  <p style={{ fontSize: '0.9rem', opacity: 0.8, marginBottom: '0.5rem' }}>주제에 대해 한 단락 분량의 한국어 글을 자유롭게 작성해 보세요.</p>
+                  <textarea 
+                    className="textarea-field" 
+                    value={koreanText}
+                    onChange={(e) => setKoreanText(e.target.value)}
+                    placeholder="여기에 한국어로 작문하세요..."
+                    disabled={feedbackData !== null}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label style={{ fontWeight: 600, color: 'var(--primary)', fontSize: '1.1rem' }}>2. 영어 번역 작성</label>
+                  <p style={{ fontSize: '0.9rem', opacity: 0.8, marginBottom: '0.5rem' }}>위에서 쓴 한국어 글을 영어로 번역하여 작성해 보세요.</p>
+                  <textarea 
+                    className="textarea-field" 
+                    value={englishText}
+                    onChange={(e) => setEnglishText(e.target.value)}
+                    placeholder="Translate your Korean text here..."
+                    disabled={feedbackData !== null}
+                  />
+                </div>
+
+                {/* AI Feedback Display */}
+                {feedbackData !== null && (
+                  <div style={{ marginTop: '1rem', padding: '1.5rem', background: 'rgba(99, 102, 241, 0.1)', borderRadius: '1rem', borderLeft: '4px solid var(--primary)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+                      <p style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.2rem', margin: 0 }}>
+                        <CheckCircle2 size={24} color="var(--primary)" /> AI 피드백 및 교정본
+                      </p>
+                      {feedbackData.score !== undefined && (
+                        <div style={{ background: 'var(--primary)', color: 'white', padding: '0.5rem 1rem', borderRadius: '2rem', fontWeight: 'bold', fontSize: '1.1rem' }}>
+                          💯 점수: {feedbackData.score} / 100
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div style={{ marginBottom: '1.5rem' }}>
+                      <h4 style={{ color: 'var(--primary-hover)', marginBottom: '0.5rem' }}>교정된 영어 문장</h4>
+                      <p style={{ fontSize: '1.1rem', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{feedbackData.correctedText}</p>
+                    </div>
+                    <div>
+                      <h4 style={{ color: 'var(--secondary)', marginBottom: '0.5rem' }}>상세 피드백</h4>
+                      <p style={{ fontSize: '1rem', opacity: 0.9, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{feedbackData.feedback}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+               <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                {feedbackData !== null ? (
+                  <button className="btn-primary" onClick={() => { reset(); fetchTopic(); }}>
+                    새로운 작문 시작 (New Practice)
+                  </button>
+                ) : (
+                  <button className="btn-primary" onClick={handleSubmit} disabled={isSubmitting || !topic}>
+                    {isSubmitting ? 'AI 평가 중...' : '제출 및 피드백 받기'}
+                  </button>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {view === 'history' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            
+            <section className="glass-panel panel-content">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <CalendarIcon size={28} color="var(--primary)" />
+                  <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Calendar History</h2>
+                </div>
+                <div style={{ display: 'flex', gap: '1.5rem', opacity: 0.8, fontSize: '0.9rem', fontWeight: 500 }}>
+                  <span>이번 달: {thisMonthPractices}개</span>
+                  <span>올해: {thisYearPractices}개</span>
+                </div>
+              </div>
+              
+              {/* Calendar Controls */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <button onClick={prevMonth} style={{ background: 'transparent', border: 'none', color: 'var(--foreground)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                  <ChevronLeft size={24} />
+                </button>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 600 }}>
+                  {format(currentMonth, 'MMMM yyyy')}
+                </h3>
+                <button onClick={nextMonth} style={{ background: 'transparent', border: 'none', color: 'var(--foreground)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                  <ChevronRight size={24} />
+                </button>
+              </div>
+
+              {renderCalendar()}
+            </section>
+
+            {/* Selected Date Details */}
+            {selectedDate && (
+              <section className="glass-panel panel-content">
+                <h3 style={{ fontSize: '1.3rem', marginBottom: '1.5rem', color: 'var(--primary)', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+                  {format(selectedDate, 'MMMM d, yyyy')} 작문 기록 ({selectedDatePractices.length}건)
+                </h3>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  {selectedDatePractices.length === 0 ? (
+                    <p style={{ textAlign: 'center', padding: '1rem', opacity: 0.7 }}>해당 날짜의 연습 기록이 없습니다.</p>
+                  ) : (
+                    selectedDatePractices.map((prac) => (
+                      <div key={prac.id} style={{ border: '1px solid var(--border)', borderRadius: '1rem', padding: '1.5rem', position: 'relative' }}>
+                        <div className="history-item-header">
+                          <h3 style={{ fontWeight: 600, fontSize: '1.2rem', margin: 0 }}>"{prac.topic}"</h3>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                            <span style={{ color: 'var(--accent)', fontSize: '0.9rem' }}>
+                              {format(new Date(prac.date), 'h:mm a')}
+                            </span>
+                            {prac.score !== null && (
+                              <span style={{ background: 'rgba(99, 102, 241, 0.2)', color: 'var(--primary)', padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                                점수: {prac.score}
+                              </span>
+                            )}
+                            <button 
+                              onClick={() => handleDelete(prac.id)}
+                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: 0.8 }}
+                              title="Delete practice"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        </div>
+                        <details style={{ cursor: 'pointer' }} open>
+                          <summary style={{ fontWeight: 500, marginBottom: '1rem', color: 'var(--secondary)' }}>작문 내용 및 피드백 보기</summary>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginTop: '1rem', background: 'rgba(255, 255, 255, 0.03)', padding: '1.5rem', borderRadius: '1rem' }}>
+                            
+                            <div>
+                              <h4 style={{ color: 'var(--accent)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>한국어 원문</h4>
+                              <p style={{ whiteSpace: 'pre-wrap', opacity: 0.9 }}>{prac.koreanText}</p>
+                            </div>
+                            
+                            <div>
+                              <h4 style={{ color: 'var(--primary)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>나의 영어 번역</h4>
+                              <p style={{ whiteSpace: 'pre-wrap', opacity: 0.9 }}>{prac.englishText}</p>
+                            </div>
+
+                            {prac.correctedText && (
+                              <div>
+                                <h4 style={{ color: 'var(--primary-hover)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>AI 교정본</h4>
+                                <p style={{ whiteSpace: 'pre-wrap', color: 'var(--primary-hover)' }}>{prac.correctedText}</p>
+                              </div>
+                            )}
+
+                            {prac.feedback && (
+                              <div>
+                                <h4 style={{ color: 'var(--secondary)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>피드백</h4>
+                                <p style={{ whiteSpace: 'pre-wrap', fontSize: '0.95rem', fontStyle: 'italic', opacity: 0.8 }}>{prac.feedback}</p>
+                              </div>
+                            )}
+
+                          </div>
+                        </details>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
+
+        {view === 'analytics' && (
+          <section className="glass-panel panel-content">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2rem' }}>
+              <BarChart3 size={28} color="var(--primary)" />
+              <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Score Analytics</h2>
+            </div>
+
+            {chartData.length === 0 ? (
+              <p style={{ textAlign: 'center', padding: '3rem', opacity: 0.7 }}>
+                아직 평가된 점수 데이터가 없습니다. 먼저 작문 연습을 완료해 주세요!
+              </p>
+            ) : (
+              <div style={{ width: '100%', height: '400px', marginTop: '2rem' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                    <XAxis dataKey="name" stroke="var(--foreground)" opacity={0.7} />
+                    <YAxis stroke="var(--foreground)" opacity={0.7} domain={[0, 100]} />
+                    <Tooltip 
+                      contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '0.5rem' }}
+                      itemStyle={{ color: 'var(--primary-hover)', fontWeight: 'bold' }}
+                      labelStyle={{ color: 'var(--foreground)' }}
+                    />
+                    <Line type="monotone" dataKey="score" stroke="var(--primary)" strokeWidth={3} activeDot={{ r: 8 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.9rem', opacity: 0.7 }}>
+              과거부터 현재까지의 번역 점수(100점 만점) 변화 추이입니다.
+            </p>
+          </section>
+        )}
+
+      </div>
+    </main>
   );
 }
