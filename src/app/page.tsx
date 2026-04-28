@@ -16,7 +16,7 @@ import {
   subMonths,
   getYear
 } from 'date-fns';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 export default function Home() {
   const { 
@@ -42,6 +42,59 @@ export default function Home() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [expandAll, setExpandAll] = useState(false);
+
+  // Swipe Gestures
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const minSwipeDistance = 50;
+  const viewsArray = ['practice', 'history', 'analytics'];
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+    setIsDragging(true);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStart === null) return;
+    const currentX = e.targetTouches[0].clientX;
+    setTouchEnd(currentX);
+    
+    const distance = currentX - touchStart;
+    const currentIndex = viewsArray.indexOf(view);
+    
+    if ((currentIndex === 0 && distance > 0) || (currentIndex === viewsArray.length - 1 && distance < 0)) {
+      setSwipeOffset(distance * 0.3);
+    } else {
+      setSwipeOffset(distance);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+    if (!touchStart || touchEnd === null) {
+      setSwipeOffset(0);
+      return;
+    }
+    
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    const currentIndex = viewsArray.indexOf(view);
+    
+    if (isLeftSwipe && currentIndex < viewsArray.length - 1) {
+      setView(viewsArray[currentIndex + 1] as any);
+    } else if (isRightSwipe && currentIndex > 0) {
+      setView(viewsArray[currentIndex - 1] as any);
+    }
+    
+    setSwipeOffset(0);
+    setTouchStart(null);
+    setTouchEnd(null);
+  };
 
   useEffect(() => {
     setExpandAll(false);
@@ -350,7 +403,25 @@ export default function Home() {
     }));
   };
 
+  const getActivityData = () => {
+    const counts: Record<string, number> = {};
+    
+    // Sort by date ascending
+    const sortedData = [...historyData].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    sortedData.forEach(prac => {
+      const d = format(new Date(prac.date), 'MM/dd');
+      counts[d] = (counts[d] || 0) + 1;
+    });
+
+    return Object.keys(counts).map(dateStr => ({
+      name: dateStr,
+      count: counts[dateStr]
+    }));
+  };
+
   const chartData = getChartData();
+  const activityData = getActivityData();
 
   if (isAuthenticated === null) return null; // Initial loading state
 
@@ -405,7 +476,12 @@ export default function Home() {
   }
 
   return (
-    <main style={{ minHeight: '100vh', padding: '2rem 1rem' }}>
+    <main 
+      style={{ minHeight: '100vh', padding: '2rem 1rem', overflowX: 'hidden' }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
         
         {/* Header */}
@@ -438,11 +514,22 @@ export default function Home() {
             </button>
           </nav>
         </header>
+      </div>
 
-        {view === 'practice' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            {/* Topic Section */}
-            <section className="glass-panel panel-content" style={{ textAlign: 'center', position: 'relative' }}>
+      <div style={{ overflow: 'hidden', width: '100vw', marginLeft: 'calc(-50vw + 50%)' }}>
+        <div style={{
+          display: 'flex',
+          width: '300%',
+          transform: `translateX(calc(-${viewsArray.indexOf(view) * 33.333}% + ${swipeOffset}px))`,
+          transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)'
+        }}>
+          
+          {/* Practice Section */}
+          <div style={{ width: '33.333%', padding: '0 1rem' }}>
+            <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                {/* Topic Section */}
+                <section className="glass-panel panel-content" style={{ textAlign: 'center', position: 'relative' }}>
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
                 <h2 style={{ fontSize: '1.2rem', color: 'var(--secondary)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Today's Topic</h2>
                 <button 
@@ -455,7 +542,7 @@ export default function Home() {
                 </button>
               </div>
               
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '0.25rem', marginBottom: '1.5rem', flexWrap: 'nowrap', width: '100%' }}>
                 {['Beginner', 'Intermediate', 'Advanced'].map(level => (
                   <button
                     key={level}
@@ -470,13 +557,16 @@ export default function Home() {
                       background: difficulty === level ? 'var(--primary)' : 'transparent',
                       color: difficulty === level ? 'white' : 'var(--foreground)',
                       border: `1px solid var(--primary)`,
-                      padding: '0.4rem 1.2rem',
+                      padding: '0.3rem 0.4rem',
                       borderRadius: '2rem',
-                      fontSize: '0.85rem',
+                      fontSize: '0.75rem',
                       fontWeight: 600,
                       cursor: !topic ? 'not-allowed' : 'pointer',
                       transition: 'all 0.2s',
-                      opacity: !topic ? 0.5 : 1
+                      opacity: !topic ? 0.5 : 1,
+                      flex: '1 1 auto',
+                      textAlign: 'center',
+                      whiteSpace: 'nowrap'
                     }}
                   >
                     {level}
@@ -485,7 +575,7 @@ export default function Home() {
               </div>
               
               {topic ? (
-                <p style={{ fontSize: '1.8rem', fontWeight: '600', lineHeight: 1.4 }}>"{topic}"</p>
+                <p style={{ fontSize: '1rem', fontWeight: '600', lineHeight: 1.4 }}>"{topic}"</p>
               ) : (
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', height: '60px' }}>
                   <Sparkles className="animate-spin" /> Generating topic...
@@ -570,12 +660,15 @@ export default function Home() {
               </div>
             </section>
           </div>
-        )}
+        </div>
+        </div>
 
-        {view === 'history' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            
-            <section className="glass-panel panel-content">
+        {/* History Section */}
+        <div style={{ width: '33.333%', padding: '0 1rem' }}>
+          <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+              
+              <section className="glass-panel panel-content">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   <CalendarIcon size={28} color="var(--primary)" />
@@ -683,42 +776,86 @@ export default function Home() {
               </section>
             )}
           </div>
-        )}
+        </div>
+        </div>
 
-        {view === 'analytics' && (
-          <section className="glass-panel panel-content">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2rem' }}>
-              <BarChart3 size={28} color="var(--primary)" />
-              <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Score Analytics</h2>
-            </div>
+        {/* Analytics Section */}
+        <div style={{ width: '33.333%', padding: '0 1rem' }}>
+          <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+            <section className="glass-panel panel-content" style={{ display: 'flex', flexDirection: 'column', gap: '3rem' }}>
+              
+              {/* Activity Chart */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2rem' }}>
+                  <PenTool size={28} color="var(--secondary)" />
+                  <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Daily Activity</h2>
+                </div>
 
-            {chartData.length === 0 ? (
-              <p style={{ textAlign: 'center', padding: '3rem', opacity: 0.7 }}>
-                아직 평가된 점수 데이터가 없습니다. 먼저 작문 연습을 완료해 주세요!
-              </p>
-            ) : (
-              <div style={{ width: '100%', height: '400px', marginTop: '2rem' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                    <XAxis dataKey="name" stroke="var(--foreground)" opacity={0.7} />
-                    <YAxis stroke="var(--foreground)" opacity={0.7} domain={[0, 100]} />
-                    <Tooltip 
-                      contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '0.5rem' }}
-                      itemStyle={{ color: 'var(--primary-hover)', fontWeight: 'bold' }}
-                      labelStyle={{ color: 'var(--foreground)' }}
-                    />
-                    <Line type="monotone" dataKey="score" stroke="var(--primary)" strokeWidth={3} activeDot={{ r: 8 }} />
-                  </LineChart>
-                </ResponsiveContainer>
+                {activityData.length === 0 ? (
+                  <p style={{ textAlign: 'center', padding: '3rem', opacity: 0.7 }}>
+                    아직 작문 연습 기록이 없습니다.
+                  </p>
+                ) : (
+                  <div style={{ width: '100%', height: '350px', marginTop: '1rem' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={activityData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
+                        <XAxis dataKey="name" stroke="var(--foreground)" opacity={0.7} />
+                        <YAxis stroke="var(--foreground)" opacity={0.7} allowDecimals={false} />
+                        <Tooltip 
+                          contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '0.5rem' }}
+                          itemStyle={{ color: 'var(--secondary)', fontWeight: 'bold' }}
+                          labelStyle={{ color: 'var(--foreground)' }}
+                          formatter={(value: number) => [`${value} 건`, '작문 횟수']}
+                        />
+                        <Bar dataKey="count" fill="var(--secondary)" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+                <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.9rem', opacity: 0.7 }}>
+                  일별 작문 연습 횟수 추이입니다.
+                </p>
               </div>
-            )}
-            <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.9rem', opacity: 0.7 }}>
-              과거부터 현재까지의 번역 점수(100점 만점) 변화 추이입니다.
-            </p>
-          </section>
-        )}
 
+              {/* Score Chart */}
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: '2rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2rem' }}>
+                  <BarChart3 size={28} color="var(--primary)" />
+                  <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Score Analytics</h2>
+                </div>
+
+                {chartData.length === 0 ? (
+                  <p style={{ textAlign: 'center', padding: '3rem', opacity: 0.7 }}>
+                    아직 평가된 점수 데이터가 없습니다. 먼저 작문 연습을 완료해 주세요!
+                  </p>
+                ) : (
+                  <div style={{ width: '100%', height: '350px', marginTop: '1rem' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                        <XAxis dataKey="name" stroke="var(--foreground)" opacity={0.7} />
+                        <YAxis stroke="var(--foreground)" opacity={0.7} domain={[0, 100]} />
+                        <Tooltip 
+                          contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '0.5rem' }}
+                          itemStyle={{ color: 'var(--primary-hover)', fontWeight: 'bold' }}
+                          labelStyle={{ color: 'var(--foreground)' }}
+                        />
+                        <Line type="monotone" dataKey="score" stroke="var(--primary)" strokeWidth={3} activeDot={{ r: 8 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+                <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.9rem', opacity: 0.7 }}>
+                  과거부터 현재까지의 번역 점수(100점 만점) 변화 추이입니다.
+                </p>
+              </div>
+
+            </section>
+          </div>
+        </div>
+
+        </div>
       </div>
     </main>
   );
