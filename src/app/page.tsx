@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { Calendar as CalendarIcon, PenTool, Sparkles, CheckCircle2, History, ChevronLeft, ChevronRight, BarChart3, Trash2, RefreshCcw } from 'lucide-react';
 import { 
@@ -25,35 +25,107 @@ export default function Home() {
     englishText, setEnglishText, 
     feedbackData, setFeedbackData, 
     isSubmitting, setIsSubmitting, 
+    difficulty, setDifficulty,
     reset 
   } = useAppStore();
   
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [accessCode, setAccessCode] = useState(['', '', '', '']);
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [authError, setAuthError] = useState('');
+
   const [view, setView] = useState<'practice' | 'history' | 'analytics'>('practice');
   const [historyData, setHistoryData] = useState<any[]>([]);
+  const feedbackRef = useRef<HTMLDivElement>(null);
   
   // Calendar States
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [expandAll, setExpandAll] = useState(false);
 
   useEffect(() => {
-    if (!topic && view === 'practice') {
+    setExpandAll(false);
+  }, [selectedDate]);
+
+  useEffect(() => {
+    const auth = localStorage.getItem('english_mastery_auth');
+    if (auth === 'true') {
+      setIsAuthenticated(true);
+    } else {
+      setIsAuthenticated(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated && !topic && view === 'practice') {
       fetchTopic();
     }
-  }, [view]);
+  }, [view, isAuthenticated]);
 
   useEffect(() => {
-    if (view === 'history' || view === 'analytics') {
+    if (isAuthenticated && (view === 'history' || view === 'analytics')) {
       loadHistory();
       if (view === 'history' && !selectedDate) {
         setSelectedDate(new Date());
       }
     }
-  }, [view]);
+  }, [view, isAuthenticated]);
 
-  const fetchTopic = async () => {
-    setTopic(''); // Reset topic to show loading state
+  const handleAuth = async (codeStr?: string) => {
+    const code = codeStr || accessCode.join('');
     try {
-      const res = await fetch('/api/topic');
+      const res = await fetch('/api/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+      const data = await res.json();
+      if (data.success) {
+        localStorage.setItem('english_mastery_auth', 'true');
+        setIsAuthenticated(true);
+      } else {
+        setAuthError('Access code is incorrect.');
+      }
+    } catch (error) {
+      setAuthError('An error occurred. Please try again.');
+    }
+  };
+
+  const handleAccessCodeChange = (index: number, value: string) => {
+    if (value.length > 1) value = value.slice(-1);
+    
+    const newCode = [...accessCode];
+    newCode[index] = value;
+    setAccessCode(newCode);
+    setAuthError('');
+
+    if (value !== '') {
+      if (index < 3) {
+        inputRefs.current[index + 1]?.focus();
+      } else {
+        const fullCode = newCode.join('');
+        if (fullCode.length === 4) {
+          handleAuth(fullCode);
+        }
+      }
+    }
+  };
+
+  const handleAccessCodeKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !accessCode[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const fetchTopic = async (overrideDiff?: string) => {
+    const diffToUse = overrideDiff || difficulty;
+    reset(); // Reset topic to show loading state and clear old texts
+    try {
+      const res = await fetch('/api/topic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ difficulty: diffToUse })
+      });
       const data = await res.json();
       if (data.topic) {
         setTopic(data.topic);
@@ -87,22 +159,97 @@ export default function Home() {
     }
     
     setIsSubmitting(true);
+    setFeedbackData({ correctedText: '', feedback: '', score: undefined });
+    
+    // Auto scroll down to feedback section
+    setTimeout(() => {
+      feedbackRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+    
     try {
       const res = await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic, koreanText, englishText })
       });
-      const data = await res.json();
-      if (data.practice) {
-        setFeedbackData({
-          correctedText: data.practice.correctedText,
-          feedback: data.practice.feedback,
-          score: data.practice.score
-        });
-      } else if (data.error) {
-        alert("Error: " + data.error);
+      
+      if (!res.ok) throw new Error('Failed to fetch feedback');
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('No stream available');
+      
+      const decoder = new TextDecoder();
+      let done = false;
+      let accumulated = "";
+
+      let finalScore: number | undefined = undefined;
+      let finalCorrected = '';
+      let finalFeedback = '';
+
+      while (!done) {
+        const { value, done: doneReading } = await reader.read();
+        done = doneReading;
+        
+        if (value) {
+          accumulated += decoder.decode(value, { stream: true });
+          
+          let remaining = accumulated;
+          let tempScore = '';
+          let tempCorrected = '';
+          let tempFeedback = '';
+          
+          if (remaining.includes('---CORRECTED---')) {
+            remaining = remaining.split('---CORRECTED---')[1];
+          }
+          
+          if (remaining.includes('---FEEDBACK---')) {
+            const parts = remaining.split('---FEEDBACK---');
+            tempCorrected = parts[0].trim();
+            remaining = parts[1];
+          } else {
+            tempCorrected = remaining.trim();
+            remaining = '';
+          }
+          
+          if (remaining.includes('---SCORE---')) {
+            const parts = remaining.split('---SCORE---');
+            tempFeedback = parts[0].trim();
+            tempScore = parts[1].trim();
+          } else {
+            if (remaining.length > 0) tempFeedback = remaining.trim();
+          }
+          
+          finalScore = tempScore && !isNaN(parseInt(tempScore)) ? parseInt(tempScore) : undefined;
+          finalCorrected = tempCorrected;
+          finalFeedback = tempFeedback;
+
+          setFeedbackData({
+            score: finalScore,
+            correctedText: finalCorrected,
+            feedback: finalFeedback
+          });
+          
+          // Continuous scroll
+          setTimeout(() => {
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+          }, 50);
+        }
       }
+
+      // Save to database after stream finishes
+      if (finalCorrected) {
+        await fetch('/api/practice/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            topic, koreanText, englishText, 
+            correctedText: finalCorrected, 
+            feedback: finalFeedback, 
+            score: finalScore 
+          })
+        });
+      }
+
     } catch (error) {
       console.error(error);
       alert("제출 중 오류가 발생했습니다.");
@@ -205,6 +352,56 @@ export default function Home() {
 
   const chartData = getChartData();
 
+  if (isAuthenticated === null) return null; // Initial loading state
+
+  if (isAuthenticated === false) {
+    return (
+      <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+        <div className="glass-panel panel-content" style={{ maxWidth: '400px', width: '100%', textAlign: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.5rem' }}>
+            <PenTool size={48} color="var(--primary)" />
+          </div>
+          <h2 style={{ marginBottom: '1rem', color: 'var(--foreground)' }}>Access Required</h2>
+          <p style={{ marginBottom: '2rem', opacity: 0.8 }}>이 앱은 개인용 작문 연습 도구입니다. 접근 코드를 입력해 주세요.</p>
+          
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+            {[0, 1, 2, 3].map((index) => (
+              <input
+                key={index}
+                ref={(el) => { inputRefs.current[index] = el; }}
+                type="password"
+                maxLength={1}
+                value={accessCode[index]}
+                onChange={(e) => handleAccessCodeChange(index, e.target.value)}
+                onKeyDown={(e) => handleAccessCodeKeyDown(index, e)}
+                style={{ 
+                  width: '3.5rem', 
+                  height: '4.5rem', 
+                  fontSize: '2rem', 
+                  textAlign: 'center', 
+                  borderRadius: '1rem', 
+                  border: '2px solid var(--border)', 
+                  background: 'var(--surface)', 
+                  color: 'var(--primary)',
+                  fontWeight: 'bold',
+                  outline: 'none',
+                  transition: 'all 0.2s'
+                }}
+                onFocus={(e) => e.target.style.borderColor = 'var(--primary)'}
+                onBlur={(e) => e.target.style.borderColor = 'var(--border)'}
+              />
+            ))}
+          </div>
+          
+          {authError && <p style={{ color: '#ef4444', fontSize: '0.9rem', marginBottom: '1rem' }}>{authError}</p>}
+          <button className="btn-primary" style={{ width: '100%' }} onClick={() => handleAuth()}>
+            접속하기
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main style={{ minHeight: '100vh', padding: '2rem 1rem' }}>
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
@@ -247,13 +444,42 @@ export default function Home() {
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
                 <h2 style={{ fontSize: '1.2rem', color: 'var(--secondary)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Today's Topic</h2>
                 <button 
-                  onClick={fetchTopic} 
+                  onClick={() => fetchTopic()} 
                   disabled={!topic}
                   style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: '0.25rem', opacity: topic ? 1 : 0.5 }}
                   title="Generate new topic"
                 >
                   <RefreshCcw size={18} className={!topic ? 'animate-spin' : ''} />
                 </button>
+              </div>
+              
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+                {['Beginner', 'Intermediate', 'Advanced'].map(level => (
+                  <button
+                    key={level}
+                    disabled={!topic}
+                    onClick={() => {
+                      if (difficulty !== level) {
+                        setDifficulty(level as any);
+                        fetchTopic(level);
+                      }
+                    }}
+                    style={{
+                      background: difficulty === level ? 'var(--primary)' : 'transparent',
+                      color: difficulty === level ? 'white' : 'var(--foreground)',
+                      border: `1px solid var(--primary)`,
+                      padding: '0.4rem 1.2rem',
+                      borderRadius: '2rem',
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      cursor: !topic ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s',
+                      opacity: !topic ? 0.5 : 1
+                    }}
+                  >
+                    {level}
+                  </button>
+                ))}
               </div>
               
               {topic ? (
@@ -294,29 +520,39 @@ export default function Home() {
                 </div>
 
                 {/* AI Feedback Display */}
-                {feedbackData !== null && (
-                  <div style={{ marginTop: '1rem', padding: '1.5rem', background: 'rgba(99, 102, 241, 0.1)', borderRadius: '1rem', borderLeft: '4px solid var(--primary)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
-                      <p style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.2rem', margin: 0 }}>
-                        <CheckCircle2 size={24} color="var(--primary)" /> AI 피드백 및 교정본
-                      </p>
-                      {feedbackData.score !== undefined && (
-                        <div style={{ background: 'var(--primary)', color: 'white', padding: '0.5rem 1rem', borderRadius: '2rem', fontWeight: 'bold', fontSize: '1.1rem' }}>
-                          💯 점수: {feedbackData.score} / 100
+                <div ref={feedbackRef}>
+                  {(feedbackData !== null || isSubmitting) && (
+                    <div style={{ marginTop: '1rem', padding: '1.5rem', background: 'rgba(99, 102, 241, 0.1)', borderRadius: '1rem', borderLeft: '4px solid var(--primary)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+                        <p style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.2rem', margin: 0 }}>
+                          {isSubmitting && (!feedbackData || (!feedbackData.correctedText && !feedbackData.feedback)) ? (
+                            <><Sparkles className="animate-spin" color="var(--primary)" /> AI가 분석 및 교정 중입니다...</>
+                          ) : (
+                            <><CheckCircle2 size={24} color="var(--primary)" /> AI 피드백 및 교정본</>
+                          )}
+                        </p>
+                        {feedbackData && feedbackData.score !== undefined && (
+                          <div style={{ background: 'var(--primary)', color: 'white', padding: '0.5rem 1rem', borderRadius: '2rem', fontWeight: 'bold', fontSize: '1.1rem' }}>
+                            💯 점수: {feedbackData.score} / 100
+                          </div>
+                        )}
+                      </div>
+                      
+                      {feedbackData && feedbackData.correctedText && (
+                        <div style={{ marginBottom: '1.5rem' }}>
+                          <h4 style={{ color: 'var(--primary-hover)', marginBottom: '0.5rem' }}>교정된 영어 문장</h4>
+                          <p style={{ fontSize: '1.1rem', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{feedbackData.correctedText}</p>
+                        </div>
+                      )}
+                      {feedbackData && feedbackData.feedback && (
+                        <div>
+                          <h4 style={{ color: 'var(--secondary)', marginBottom: '0.5rem' }}>상세 피드백</h4>
+                          <p style={{ fontSize: '1rem', opacity: 0.9, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{feedbackData.feedback}</p>
                         </div>
                       )}
                     </div>
-                    
-                    <div style={{ marginBottom: '1.5rem' }}>
-                      <h4 style={{ color: 'var(--primary-hover)', marginBottom: '0.5rem' }}>교정된 영어 문장</h4>
-                      <p style={{ fontSize: '1.1rem', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{feedbackData.correctedText}</p>
-                    </div>
-                    <div>
-                      <h4 style={{ color: 'var(--secondary)', marginBottom: '0.5rem' }}>상세 피드백</h4>
-                      <p style={{ fontSize: '1rem', opacity: 0.9, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{feedbackData.feedback}</p>
-                    </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
                <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
@@ -368,9 +604,19 @@ export default function Home() {
             {/* Selected Date Details */}
             {selectedDate && (
               <section className="glass-panel panel-content">
-                <h3 style={{ fontSize: '1.3rem', marginBottom: '1.5rem', color: 'var(--primary)', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
-                  {format(selectedDate, 'MMMM d, yyyy')} 작문 기록 ({selectedDatePractices.length}건)
-                </h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+                  <h3 style={{ fontSize: '1.3rem', color: 'var(--primary)', margin: 0 }}>
+                    {format(selectedDate, 'MMMM d, yyyy')} 작문 기록 ({selectedDatePractices.length}건)
+                  </h3>
+                  {selectedDatePractices.length > 0 && (
+                    <button 
+                      onClick={() => setExpandAll(!expandAll)}
+                      style={{ background: 'var(--surface)', border: '1px solid var(--border)', padding: '0.4rem 1rem', borderRadius: '2rem', fontSize: '0.85rem', cursor: 'pointer', color: 'var(--foreground)', fontWeight: 500, transition: 'all 0.2s' }}
+                    >
+                      {expandAll ? '모두 접기' : '모두 펼치기'}
+                    </button>
+                  )}
+                </div>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                   {selectedDatePractices.length === 0 ? (
@@ -398,7 +644,7 @@ export default function Home() {
                             </button>
                           </div>
                         </div>
-                        <details style={{ cursor: 'pointer' }} open>
+                        <details style={{ cursor: 'pointer' }} open={expandAll}>
                           <summary style={{ fontWeight: 500, marginBottom: '1rem', color: 'var(--secondary)' }}>작문 내용 및 피드백 보기</summary>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginTop: '1rem', background: 'rgba(255, 255, 255, 0.03)', padding: '1.5rem', borderRadius: '1rem' }}>
                             

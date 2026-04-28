@@ -12,11 +12,13 @@ interface AppState {
   englishText: string;
   feedbackData: FeedbackData | null;
   isSubmitting: boolean;
+  difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
   setTopic: (topic: string) => void;
   setKoreanText: (text: string) => void;
   setEnglishText: (text: string) => void;
   setFeedbackData: (data: FeedbackData | null) => void;
   setIsSubmitting: (isSubmitting: boolean) => void;
+  setDifficulty: (diff: 'Beginner' | 'Intermediate' | 'Advanced') => void;
   reset: () => void;
 }
 
@@ -26,10 +28,12 @@ export const useAppStore = create<AppState>((set) => ({
   englishText: '',
   feedbackData: null,
   isSubmitting: false,
+  difficulty: 'Beginner',
   setTopic: (topic) => set({ topic }),
   setKoreanText: (koreanText) => set({ koreanText }),
   setEnglishText: (englishText) => set({ englishText }),
   setFeedbackData: (feedbackData) => set({ feedbackData }),
   setIsSubmitting: (isSubmitting) => set({ isSubmitting }),
+  setDifficulty: (difficulty) => set({ difficulty }),
   reset: () => set({ topic: '', koreanText: '', englishText: '', feedbackData: null, isSubmitting: false }),
 }));
