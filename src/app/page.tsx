@@ -370,6 +370,8 @@ export default function Home() {
                 key={index}
                 ref={(el) => { inputRefs.current[index] = el; }}
                 type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 maxLength={1}
                 value={accessCode[index]}
                 onChange={(e) => handleAccessCodeChange(index, e.target.value)}
