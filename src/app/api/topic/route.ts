@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     const text = result.response.text().trim();
 
     return NextResponse.json({ topic: text });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error generating topic:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

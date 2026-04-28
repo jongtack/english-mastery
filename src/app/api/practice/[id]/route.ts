@@ -15,7 +15,7 @@ export async function DELETE(
     await db.collection('practices').doc(id).delete();
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error deleting practice:', error);
     return NextResponse.json({ error: 'Failed to delete practice' }, { status: 500 });
   }

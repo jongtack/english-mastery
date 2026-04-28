@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     const docRef = await db.collection('practices').add(practiceData);
 
     return NextResponse.json({ success: true, id: docRef.id });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error saving practice:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

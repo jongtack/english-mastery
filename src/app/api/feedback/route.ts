@@ -50,7 +50,7 @@ export async function POST(req: Request) {
 
     return result.toTextStreamResponse();
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error in feedback API:', error);
     return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   }

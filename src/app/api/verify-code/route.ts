@@ -13,7 +13,7 @@ export async function POST(req: Request) {
     } else {
       return NextResponse.json({ success: false, error: 'Invalid access code' }, { status: 401 });
     }
-  } catch (error) {
+  } catch (_error) {
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
