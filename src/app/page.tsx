@@ -529,7 +529,12 @@ export default function Home() {
         }}>
           
           {/* Practice Section */}
-          <div style={{ width: '33.333%', padding: '0 1rem' }}>
+        <div style={{ 
+          width: '33.333%', 
+          padding: '0 1rem',
+          height: (view === 'practice' || isDragging) ? 'auto' : 0,
+          overflow: 'hidden'
+        }}>
             <div style={{ maxWidth: '900px', margin: '0 auto' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                 {/* Topic Section */}
@@ -668,7 +673,12 @@ export default function Home() {
         </div>
 
         {/* History Section */}
-        <div style={{ width: '33.333%', padding: '0 1rem' }}>
+        <div style={{ 
+          width: '33.333%', 
+          padding: '0 1rem',
+          height: (view === 'history' || isDragging) ? 'auto' : 0,
+          overflow: 'hidden'
+        }}>
           <div style={{ maxWidth: '900px', margin: '0 auto' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
               
@@ -784,7 +794,12 @@ export default function Home() {
         </div>
 
         {/* Analytics Section */}
-        <div style={{ width: '33.333%', padding: '0 1rem' }}>
+        <div style={{ 
+          width: '33.333%', 
+          padding: '0 1rem',
+          height: (view === 'analytics' || isDragging) ? 'auto' : 0,
+          overflow: 'hidden'
+        }}>
           <div style={{ maxWidth: '900px', margin: '0 auto' }}>
             <section className="glass-panel panel-content" style={{ display: 'flex', flexDirection: 'column', gap: '3rem' }}>
               
