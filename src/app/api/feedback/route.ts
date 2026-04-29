@@ -52,6 +52,6 @@ export async function POST(req: Request) {
 
   } catch (error: unknown) {
     console.error('Error in feedback API:', error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), { status: 500 });
   }
 }

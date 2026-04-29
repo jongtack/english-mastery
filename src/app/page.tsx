@@ -810,7 +810,7 @@ export default function Home() {
                           contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '0.5rem' }}
                           itemStyle={{ color: 'var(--secondary)', fontWeight: 'bold' }}
                           labelStyle={{ color: 'var(--foreground)' }}
-                          formatter={(value: number) => [`${value} 건`, '작문 횟수']}
+                          formatter={(value) => [`${value || 0} 건`, '작문 횟수']}
                         />
                         <Bar dataKey="count" fill="var(--secondary)" radius={[4, 4, 0, 0]} />
                       </BarChart>
