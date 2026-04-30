@@ -329,3 +329,37 @@ h1, h2, h3, h4, h5, h6 {
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+
+/* Markdown Content Styles */
+.markdown-body {
+  word-break: break-word;
+}
+.markdown-body p {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+.markdown-body strong {
+  font-weight: 700;
+  color: var(--secondary);
+}
+.markdown-body ul {
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+  list-style-type: disc;
+}
+.markdown-body ol {
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+  list-style-type: decimal;
+}
+.markdown-body li {
+  margin-bottom: 0.25rem;
+}
+.markdown-body h3, .markdown-body h4 {
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: var(--primary);
+}

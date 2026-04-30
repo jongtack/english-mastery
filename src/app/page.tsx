@@ -20,6 +20,8 @@ import {
   getYear
 } from 'date-fns';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export default function Home() {
   const { 
@@ -648,7 +650,9 @@ export default function Home() {
                       {feedbackData && feedbackData.feedback && (
                         <div>
                           <h4 style={{ color: 'var(--secondary)', marginBottom: '0.5rem' }}>상세 피드백</h4>
-                          <p style={{ fontSize: '1rem', opacity: 0.9, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{feedbackData.feedback}</p>
+                          <div style={{ fontSize: '1rem', opacity: 0.9, lineHeight: 1.6 }} className="markdown-body">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{feedbackData.feedback}</ReactMarkdown>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -775,9 +779,11 @@ export default function Home() {
                             )}
 
                             {prac.feedback && (
-                              <div>
+                              <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                                 <h4 style={{ color: 'var(--secondary)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>피드백</h4>
-                                <p style={{ whiteSpace: 'pre-wrap', fontSize: '0.95rem', fontStyle: 'italic', opacity: 0.8 }}>{prac.feedback}</p>
+                                <div style={{ fontSize: '0.95rem', opacity: 0.8, lineHeight: 1.6 }} className="markdown-body">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{prac.feedback}</ReactMarkdown>
+                                </div>
                               </div>
                             )}
 
