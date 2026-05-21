@@ -402,8 +402,8 @@ export default function Home() {
       .filter(prac => prac.score !== null && prac.score !== undefined)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       
-    return scoredPractices.map(prac => ({
-      name: format(new Date(prac.date), 'MM/dd'),
+    return scoredPractices.map((prac, index) => ({
+      name: `${format(new Date(prac.date), 'MM/dd HH:mm')}#${index}`,
       score: prac.score,
       topic: prac.topic
     }));
@@ -859,12 +859,18 @@ export default function Home() {
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                        <XAxis dataKey="name" stroke="var(--foreground)" opacity={0.7} />
+                        <XAxis 
+                          dataKey="name" 
+                          stroke="var(--foreground)" 
+                          opacity={0.7} 
+                          tickFormatter={(val) => typeof val === 'string' ? val.split(' ')[0] : val}
+                        />
                         <YAxis stroke="var(--foreground)" opacity={0.7} domain={[0, 100]} />
                         <Tooltip 
                           contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '0.5rem' }}
                           itemStyle={{ color: 'var(--primary-hover)', fontWeight: 'bold' }}
                           labelStyle={{ color: 'var(--foreground)' }}
+                          labelFormatter={(label) => typeof label === 'string' ? label.split('#')[0] : label}
                         />
                         <Line type="monotone" dataKey="score" stroke="var(--primary)" strokeWidth={3} activeDot={{ r: 8 }} />
                       </LineChart>
