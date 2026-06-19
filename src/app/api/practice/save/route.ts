@@ -3,19 +3,18 @@ import { db } from '@/lib/firebase';
 
 export async function POST(req: Request) {
   try {
-    const { topic, koreanText, englishText, correctedText, feedback, score } = await req.json();
+    const { topic, englishText, exampleText, feedback, score } = await req.json();
     
-    if (!topic || !koreanText || !englishText) {
+    if (!topic || !englishText) {
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
     }
 
     const practiceData = {
       topic,
-      koreanText,
       englishText,
-      correctedText,
+      exampleText,
       feedback,
-      score: score ? Number(score) : null,
+      score: score !== undefined ? Number(score) : null,
       date: new Date().toISOString(),
     };
 

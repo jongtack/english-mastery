@@ -26,11 +26,11 @@ import remarkGfm from 'remark-gfm';
 export default function Home() {
   const { 
     topic, setTopic, 
-    koreanText, setKoreanText, 
     englishText, setEnglishText, 
     feedbackData, setFeedbackData, 
     isSubmitting, setIsSubmitting, 
-    difficulty, setDifficulty,
+    style, setStyle,
+    level, setLevel,
     reset 
   } = useAppStore();
   
@@ -43,6 +43,14 @@ export default function Home() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [historyData, setHistoryData] = useState<any[]>([]);
   const feedbackRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.max(150, textareaRef.current.scrollHeight)}px`;
+    }
+  }, [englishText]);
   
   // Calendar States
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -176,14 +184,15 @@ export default function Home() {
     }
   };
 
-  async function fetchTopic(overrideDiff?: string) {
-    const diffToUse = overrideDiff || difficulty;
+  async function fetchTopic(overrideStyle?: string, overrideLevel?: string) {
+    const styleToUse = overrideStyle || style;
+    const levelToUse = overrideLevel || level;
     reset(); // Reset topic to show loading state and clear old texts
     try {
       const res = await fetch('/api/topic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ difficulty: diffToUse })
+        body: JSON.stringify({ style: styleToUse, level: levelToUse })
       });
       const data = await res.json();
       if (data.topic) {
@@ -212,13 +221,13 @@ export default function Home() {
   }
 
   const handleSubmit = async () => {
-    if (koreanText.trim().length === 0 || englishText.trim().length === 0) {
-      alert("한국어 원문과 영어 번역문을 모두 입력해 주세요.");
+    if (englishText.trim().length === 0) {
+      alert("영어 영작문을 입력해 주세요.");
       return;
     }
     
     setIsSubmitting(true);
-    setFeedbackData({ correctedText: '', feedback: '', score: undefined });
+    setFeedbackData({ feedback: '', score: undefined, exampleText: '' });
     
     // Auto scroll down to feedback section
     setTimeout(() => {
@@ -229,7 +238,7 @@ export default function Home() {
       const res = await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, koreanText, englishText })
+        body: JSON.stringify({ topic, englishText, style })
       });
       
       if (!res.ok) throw new Error('Failed to fetch feedback');
@@ -242,7 +251,7 @@ export default function Home() {
       let accumulated = "";
 
       let finalScore: number | undefined = undefined;
-      let finalCorrected = '';
+      let finalExample = '';
       let finalFeedback = '';
 
       while (!done) {
@@ -254,38 +263,36 @@ export default function Home() {
           
           let remaining = accumulated;
           let tempScore = '';
-          let tempCorrected = '';
           let tempFeedback = '';
-          
-          if (remaining.includes('---CORRECTED---')) {
-            remaining = remaining.split('---CORRECTED---')[1];
-          }
-          
-          if (remaining.includes('---FEEDBACK---')) {
-            const parts = remaining.split('---FEEDBACK---');
-            tempCorrected = parts[0].trim();
-            remaining = parts[1];
-          } else {
-            tempCorrected = remaining.trim();
-            remaining = '';
-          }
+          let tempExample = '';
           
           if (remaining.includes('---SCORE---')) {
-            const parts = remaining.split('---SCORE---');
-            tempFeedback = parts[0].trim();
-            tempScore = parts[1].trim();
-          } else {
-            if (remaining.length > 0) tempFeedback = remaining.trim();
+             let scorePart = remaining.split('---SCORE---')[1] || '';
+             if (scorePart.includes('---FEEDBACK---')) {
+                const parts = scorePart.split('---FEEDBACK---');
+                tempScore = parts[0].trim();
+                let feedbackPart = parts[1] || '';
+                
+                if (feedbackPart.includes('---EXAMPLE---')) {
+                   const fbParts = feedbackPart.split('---EXAMPLE---');
+                   tempFeedback = fbParts[0].trim();
+                   tempExample = fbParts[1].trim();
+                } else {
+                   tempFeedback = feedbackPart.trim();
+                }
+             } else {
+                tempScore = scorePart.trim();
+             }
           }
-          
+
           finalScore = tempScore && !isNaN(parseInt(tempScore)) ? parseInt(tempScore) : undefined;
-          finalCorrected = tempCorrected;
           finalFeedback = tempFeedback;
+          finalExample = tempExample;
 
           setFeedbackData({
             score: finalScore,
-            correctedText: finalCorrected,
-            feedback: finalFeedback
+            feedback: finalFeedback,
+            exampleText: finalExample
           });
           
           // Continuous scroll
@@ -296,13 +303,13 @@ export default function Home() {
       }
 
       // Save to database after stream finishes
-      if (finalCorrected) {
+      if (finalFeedback || finalExample) {
         await fetch('/api/practice/save', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            topic, koreanText, englishText, 
-            correctedText: finalCorrected, 
+            topic, englishText, 
+            exampleText: finalExample, 
             feedback: finalFeedback, 
             score: finalScore 
           })
@@ -553,34 +560,66 @@ export default function Home() {
                 </button>
               </div>
               
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '0.25rem', marginBottom: '1.5rem', flexWrap: 'nowrap', width: '100%' }}>
-                {['Beginner', 'Intermediate', 'Advanced'].map(level => (
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap', width: '100%' }}>
+                {['Essay', 'Casual Conversation'].map(s => (
                   <button
-                    key={level}
+                    key={s}
                     disabled={!topic}
                     onClick={() => {
-                      if (difficulty !== level) {
-                        setDifficulty(level as 'Beginner' | 'Intermediate' | 'Advanced');
-                        fetchTopic(level);
+                      if (style !== s) {
+                        setStyle(s as 'Essay' | 'Casual Conversation');
+                        fetchTopic(s);
                       }
                     }}
                     style={{
-                      background: difficulty === level ? 'var(--primary)' : 'transparent',
-                      color: difficulty === level ? 'white' : 'var(--foreground)',
+                      background: style === s ? 'var(--primary)' : 'transparent',
+                      color: style === s ? 'white' : 'var(--foreground)',
                       border: `1px solid var(--primary)`,
-                      padding: '0.3rem 0.4rem',
+                      padding: '0.4rem 1.2rem',
                       borderRadius: '2rem',
-                      fontSize: '0.75rem',
+                      fontSize: '0.9rem',
                       fontWeight: 600,
                       cursor: !topic ? 'not-allowed' : 'pointer',
                       transition: 'all 0.2s',
                       opacity: !topic ? 0.5 : 1,
-                      flex: '1 1 auto',
+                      flex: '0 1 auto',
                       textAlign: 'center',
                       whiteSpace: 'nowrap'
                     }}
                   >
-                    {level}
+                    {s}
+                  </button>
+                ))}
+              </div>
+              
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '0.25rem', marginBottom: '1.5rem', flexWrap: 'nowrap', width: '100%' }}>
+                {['Beginner', 'Intermediate'].map(l => (
+                  <button
+                    key={l}
+                    disabled={!topic}
+                    onClick={() => {
+                      if (level !== l) {
+                        setLevel(l as 'Beginner' | 'Intermediate');
+                        fetchTopic(style, l);
+                      }
+                    }}
+                    style={{
+                      background: level === l ? 'var(--secondary)' : 'transparent',
+                      color: level === l ? 'white' : 'var(--foreground)',
+                      border: `1px solid var(--secondary)`,
+                      padding: '0.3rem 0.8rem',
+                      borderRadius: '2rem',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: !topic ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s',
+                      opacity: !topic ? 0.5 : 1,
+                      flex: '0 1 auto',
+                      textAlign: 'center',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {l}
                   </button>
                 ))}
               </div>
@@ -599,26 +638,39 @@ export default function Home() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <label style={{ fontWeight: 600, color: 'var(--accent)', fontSize: '1.1rem' }}>1. 한국어 원문 작성</label>
-                  <p style={{ fontSize: '0.9rem', opacity: 0.8, marginBottom: '0.5rem' }}>주제에 대해 한 단락 분량의 한국어 글을 자유롭게 작성해 보세요.</p>
+                  <label style={{ fontWeight: 600, color: 'var(--primary)', fontSize: '1.1rem' }}>✍️ English Writing</label>
+                  <p style={{ fontSize: '0.9rem', opacity: 0.8, marginBottom: '0.5rem' }}>주제에 맞춰 영어로 자유롭게 글을 작성해 보세요.</p>
                   <textarea 
-                    className="textarea-field" 
-                    value={koreanText}
-                    onChange={(e) => setKoreanText(e.target.value)}
-                    placeholder="여기에 한국어로 작문하세요..."
-                    disabled={feedbackData !== null}
-                  />
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <label style={{ fontWeight: 600, color: 'var(--primary)', fontSize: '1.1rem' }}>2. 영어 번역 작성</label>
-                  <p style={{ fontSize: '0.9rem', opacity: 0.8, marginBottom: '0.5rem' }}>위에서 쓴 한국어 글을 영어로 번역하여 작성해 보세요.</p>
-                  <textarea 
+                    ref={textareaRef}
                     className="textarea-field" 
                     value={englishText}
                     onChange={(e) => setEnglishText(e.target.value)}
-                    placeholder="Translate your Korean text here..."
+                    onFocus={(e) => {
+                      if (style === 'Casual Conversation' && englishText === '') {
+                        setEnglishText('A: ');
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (style === 'Casual Conversation' && e.key === 'Enter') {
+                        e.preventDefault();
+                        const currentText = englishText;
+                        const aIndex = currentText.lastIndexOf('A: ');
+                        const bIndex = currentText.lastIndexOf('B: ');
+                        let nextSpeaker = 'A: ';
+                        if (aIndex > bIndex) nextSpeaker = 'B: ';
+                        if (bIndex > aIndex) nextSpeaker = 'A: ';
+                        
+                        let newText = currentText + '\n' + nextSpeaker;
+                        if (currentText.trim() === '') {
+                          newText = nextSpeaker;
+                        }
+                        
+                        setEnglishText(newText);
+                      }
+                    }}
+                    placeholder={style === 'Casual Conversation' ? 'A: ' : 'Write your English text here...'}
                     disabled={feedbackData !== null}
+                    style={{ minHeight: '150px', overflow: 'hidden', resize: 'none' }}
                   />
                 </div>
 
@@ -628,10 +680,10 @@ export default function Home() {
                     <div style={{ marginTop: '1rem', padding: '1.5rem', background: 'rgba(99, 102, 241, 0.1)', borderRadius: '1rem', borderLeft: '4px solid var(--primary)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
                         <p style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.2rem', margin: 0 }}>
-                          {isSubmitting && (!feedbackData || (!feedbackData.correctedText && !feedbackData.feedback)) ? (
-                            <><Sparkles className="animate-spin" color="var(--primary)" /> AI가 분석 및 교정 중입니다...</>
+                          {isSubmitting && (!feedbackData || (!feedbackData.exampleText && !feedbackData.feedback)) ? (
+                            <><Sparkles className="animate-spin" color="var(--primary)" /> AI가 분석 및 피드백 작성 중입니다...</>
                           ) : (
-                            <><CheckCircle2 size={24} color="var(--primary)" /> AI 피드백 및 교정본</>
+                            <><CheckCircle2 size={24} color="var(--primary)" /> AI 피드백 및 모범 답안</>
                           )}
                         </p>
                         {feedbackData && feedbackData.score !== undefined && (
@@ -641,18 +693,19 @@ export default function Home() {
                         )}
                       </div>
                       
-                      {feedbackData && feedbackData.correctedText && (
-                        <div style={{ marginBottom: '1.5rem' }}>
-                          <h4 style={{ color: 'var(--primary-hover)', marginBottom: '0.5rem' }}>교정된 영어 문장</h4>
-                          <p style={{ fontSize: '1.1rem', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{feedbackData.correctedText}</p>
-                        </div>
-                      )}
                       {feedbackData && feedbackData.feedback && (
-                        <div>
-                          <h4 style={{ color: 'var(--secondary)', marginBottom: '0.5rem' }}>상세 피드백</h4>
+                        <div style={{ marginBottom: '1.5rem' }}>
+                          <h4 style={{ color: 'var(--secondary)', marginBottom: '0.5rem' }}>💡 상세 피드백 및 개선 팁</h4>
                           <div style={{ fontSize: '1rem', opacity: 0.9, lineHeight: 1.6 }} className="markdown-body">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{feedbackData.feedback}</ReactMarkdown>
                           </div>
+                        </div>
+                      )}
+
+                      {feedbackData && feedbackData.exampleText && (
+                        <div>
+                          <h4 style={{ color: 'var(--primary-hover)', marginBottom: '0.5rem' }}>✨ 원어민 모범 예시 (High-Quality Example)</h4>
+                          <p style={{ fontSize: '1.1rem', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{feedbackData.exampleText}</p>
                         </div>
                       )}
                     </div>
@@ -761,29 +814,38 @@ export default function Home() {
                           <summary style={{ fontWeight: 500, marginBottom: '1rem', color: 'var(--secondary)' }}>작문 내용 및 피드백 보기</summary>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginTop: '1rem', background: 'rgba(255, 255, 255, 0.03)', padding: '1.5rem', borderRadius: '1rem' }}>
                             
-                            <div>
-                              <h4 style={{ color: 'var(--accent)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>한국어 원문</h4>
-                              <p style={{ whiteSpace: 'pre-wrap', opacity: 0.9 }}>{prac.koreanText}</p>
-                            </div>
+                            {prac.koreanText && (
+                              <div>
+                                <h4 style={{ color: 'var(--accent)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>한국어 원문 (과거 기록)</h4>
+                                <p style={{ whiteSpace: 'pre-wrap', opacity: 0.9 }}>{prac.koreanText}</p>
+                              </div>
+                            )}
                             
                             <div>
-                              <h4 style={{ color: 'var(--primary)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>나의 영어 번역</h4>
+                              <h4 style={{ color: 'var(--primary)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>나의 영어 번역/작문</h4>
                               <p style={{ whiteSpace: 'pre-wrap', opacity: 0.9 }}>{prac.englishText}</p>
                             </div>
 
                             {prac.correctedText && (
                               <div>
-                                <h4 style={{ color: 'var(--primary-hover)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>AI 교정본</h4>
+                                <h4 style={{ color: 'var(--primary-hover)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>AI 교정본 (과거 기록)</h4>
                                 <p style={{ whiteSpace: 'pre-wrap', color: 'var(--primary-hover)' }}>{prac.correctedText}</p>
                               </div>
                             )}
 
                             {prac.feedback && (
-                              <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                              <div style={{ marginTop: '0.5rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                                 <h4 style={{ color: 'var(--secondary)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>피드백</h4>
                                 <div style={{ fontSize: '0.95rem', opacity: 0.8, lineHeight: 1.6 }} className="markdown-body">
                                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{prac.feedback}</ReactMarkdown>
                                 </div>
+                              </div>
+                            )}
+
+                            {prac.exampleText && (
+                              <div style={{ marginTop: '0.5rem' }}>
+                                <h4 style={{ color: 'var(--primary-hover)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>모범 답안 예시</h4>
+                                <p style={{ whiteSpace: 'pre-wrap', color: 'var(--primary-hover)' }}>{prac.exampleText}</p>
                               </div>
                             )}
 

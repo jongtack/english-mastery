@@ -1,39 +1,39 @@
 import { create } from 'zustand';
 
 interface FeedbackData {
-  correctedText?: string;
+  exampleText?: string;
   feedback?: string;
   score?: number;
 }
 
 interface AppState {
   topic: string;
-  koreanText: string;
   englishText: string;
   feedbackData: FeedbackData | null;
   isSubmitting: boolean;
-  difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+  style: 'Essay' | 'Casual Conversation';
+  level: 'Beginner' | 'Intermediate';
   setTopic: (topic: string) => void;
-  setKoreanText: (text: string) => void;
   setEnglishText: (text: string) => void;
   setFeedbackData: (data: FeedbackData | null) => void;
   setIsSubmitting: (isSubmitting: boolean) => void;
-  setDifficulty: (diff: 'Beginner' | 'Intermediate' | 'Advanced') => void;
+  setStyle: (style: 'Essay' | 'Casual Conversation') => void;
+  setLevel: (level: 'Beginner' | 'Intermediate') => void;
   reset: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   topic: '',
-  koreanText: '',
   englishText: '',
   feedbackData: null,
   isSubmitting: false,
-  difficulty: 'Beginner',
+  style: 'Essay',
+  level: 'Beginner',
   setTopic: (topic) => set({ topic }),
-  setKoreanText: (koreanText) => set({ koreanText }),
   setEnglishText: (englishText) => set({ englishText }),
   setFeedbackData: (feedbackData) => set({ feedbackData }),
   setIsSubmitting: (isSubmitting) => set({ isSubmitting }),
-  setDifficulty: (difficulty) => set({ difficulty }),
-  reset: () => set({ topic: '', koreanText: '', englishText: '', feedbackData: null, isSubmitting: false }),
+  setStyle: (style) => set({ style }),
+  setLevel: (level) => set({ level }),
+  reset: () => set({ topic: '', englishText: '', feedbackData: null, isSubmitting: false }),
 }));
