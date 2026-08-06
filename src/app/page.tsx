@@ -58,45 +58,75 @@ export default function Home() {
   const [expandAll, setExpandAll] = useState(false);
 
   // Swipe Gestures
-  const [touchStart, setTouchStart] = useState<number | null>(null);
-  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [touchStartY, setTouchStartY] = useState<number | null>(null);
+  const [touchEndX, setTouchEndX] = useState<number | null>(null);
+  const [touchStartTime, setTouchStartTime] = useState<number | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [isVerticalScroll, setIsVerticalScroll] = useState(false);
 
   const minSwipeDistance = 50;
   const viewsArray = ['practice', 'history', 'analytics'];
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchEnd(null);
-    setTouchStart(e.targetTouches[0].clientX);
-    setIsDragging(true);
+    setTouchEndX(null);
+    setTouchStartX(e.targetTouches[0].clientX);
+    setTouchStartY(e.targetTouches[0].clientY);
+    setTouchStartTime(Date.now());
+    setIsDragging(false);
+    setIsVerticalScroll(false);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStart === null) return;
-    const currentX = e.targetTouches[0].clientX;
-    setTouchEnd(currentX);
+    if (touchStartX === null || touchStartY === null) return;
     
-    const distance = currentX - touchStart;
+    const currentX = e.targetTouches[0].clientX;
+    const currentY = e.targetTouches[0].clientY;
+    
+    const deltaX = currentX - touchStartX;
+    const deltaY = currentY - touchStartY;
+    
+    if (!isDragging && !isVerticalScroll) {
+      if (Math.abs(deltaY) > Math.abs(deltaX)) {
+        setIsVerticalScroll(true);
+      } else if (Math.abs(deltaX) > 10) {
+        setIsDragging(true);
+      }
+    }
+    
+    if (isVerticalScroll) return;
+
+    setTouchEndX(currentX);
     const currentIndex = viewsArray.indexOf(view);
     
-    if ((currentIndex === 0 && distance > 0) || (currentIndex === viewsArray.length - 1 && distance < 0)) {
-      setSwipeOffset(distance * 0.3);
+    if ((currentIndex === 0 && deltaX > 0) || (currentIndex === viewsArray.length - 1 && deltaX < 0)) {
+      setSwipeOffset(deltaX * 0.3);
     } else {
-      setSwipeOffset(distance);
+      setSwipeOffset(deltaX);
     }
   };
 
   const handleTouchEnd = () => {
     setIsDragging(false);
-    if (!touchStart || touchEnd === null) {
+    setIsVerticalScroll(false);
+    
+    if (touchStartX === null || touchEndX === null || touchStartTime === null) {
       setSwipeOffset(0);
       return;
     }
     
-    const distance = touchStart - touchEnd;
-    const isLeftSwipe = distance > minSwipeDistance;
-    const isRightSwipe = distance < -minSwipeDistance;
+    const deltaX = touchStartX - touchEndX;
+    const timeElapsed = Date.now() - touchStartTime;
+    const velocity = Math.abs(deltaX) / timeElapsed;
+    
+    // Require a minimum velocity (e.g. 0.5px/ms) or a very long swipe distance
+    const isFastSwipe = velocity > 0.5;
+    const isLongSwipe = Math.abs(deltaX) > 100;
+    const isValidSwipe = (isFastSwipe && Math.abs(deltaX) > minSwipeDistance) || isLongSwipe;
+    
+    const isLeftSwipe = isValidSwipe && deltaX > 0;
+    const isRightSwipe = isValidSwipe && deltaX < 0;
     const currentIndex = viewsArray.indexOf(view);
     
     if (isLeftSwipe && currentIndex < viewsArray.length - 1) {
@@ -106,8 +136,10 @@ export default function Home() {
     }
     
     setSwipeOffset(0);
-    setTouchStart(null);
-    setTouchEnd(null);
+    setTouchStartX(null);
+    setTouchStartY(null);
+    setTouchEndX(null);
+    setTouchStartTime(null);
   };
 
   useEffect(() => {
