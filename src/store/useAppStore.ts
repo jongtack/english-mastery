@@ -11,13 +11,13 @@ interface AppState {
   englishText: string;
   feedbackData: FeedbackData | null;
   isSubmitting: boolean;
-  style: 'Essay' | 'Casual Conversation';
+  style: 'Essay' | 'Conversation';
   level: 'Beginner' | 'Intermediate';
   setTopic: (topic: string) => void;
   setEnglishText: (text: string) => void;
   setFeedbackData: (data: FeedbackData | null) => void;
   setIsSubmitting: (isSubmitting: boolean) => void;
-  setStyle: (style: 'Essay' | 'Casual Conversation') => void;
+  setStyle: (style: 'Essay' | 'Conversation') => void;
   setLevel: (level: 'Beginner' | 'Intermediate') => void;
   reset: () => void;
 }

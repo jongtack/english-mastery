@@ -593,13 +593,13 @@ export default function Home() {
               </div>
               
               <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap', width: '100%' }}>
-                {['Essay', 'Casual Conversation'].map(s => (
+                {['Essay', 'Conversation'].map(s => (
                   <button
                     key={s}
                     disabled={!topic}
                     onClick={() => {
                       if (style !== s) {
-                        setStyle(s as 'Essay' | 'Casual Conversation');
+                        setStyle(s as 'Essay' | 'Conversation');
                         fetchTopic(s);
                       }
                     }}
@@ -678,12 +678,12 @@ export default function Home() {
                     value={englishText}
                     onChange={(e) => setEnglishText(e.target.value)}
                     onFocus={(e) => {
-                      if (style === 'Casual Conversation' && englishText === '') {
+                      if (style === 'Conversation' && englishText === '') {
                         setEnglishText('A: ');
                       }
                     }}
                     onKeyDown={(e) => {
-                      if (style === 'Casual Conversation' && e.key === 'Enter') {
+                      if (style === 'Conversation' && e.key === 'Enter') {
                         e.preventDefault();
                         const currentText = englishText;
                         const aIndex = currentText.lastIndexOf('A: ');
@@ -700,7 +700,7 @@ export default function Home() {
                         setEnglishText(newText);
                       }
                     }}
-                    placeholder={style === 'Casual Conversation' ? 'A: ' : 'Write your English text here...'}
+                    placeholder={style === 'Conversation' ? 'A: ' : 'Write your English text here...'}
                     disabled={feedbackData !== null}
                     style={{ minHeight: '150px', overflow: 'hidden', resize: 'none' }}
                   />

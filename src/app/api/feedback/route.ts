@@ -16,7 +16,7 @@ export async function POST(req: Request) {
       return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400 });
     }
 
-    const isConversation = style === 'Casual Conversation';
+    const isConversation = style === 'Conversation';
     const exampleInstruction = isConversation 
       ? "Provide a high-quality example of how native speakers might casually converse about this topic. The example MUST be formatted as a short dialogue (A: ... B: ...) of no more than 10 lines."
       : "Provide a high-quality example of how a native speaker might write about this topic. The example MUST be a single paragraph of no more than 10 sentences.";

@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     let targetPrompt = "";
     let formats: string[] = [];
 
-    if (style === 'Casual Conversation') {
+    if (style === 'Conversation') {
       if (level === 'Beginner') {
         targetPrompt = "Korean adult English learners at a beginner level practicing casual, everyday spoken English.";
         formats = [
