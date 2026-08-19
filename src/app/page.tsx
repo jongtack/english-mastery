@@ -221,10 +221,11 @@ export default function Home() {
     const levelToUse = overrideLevel || level;
     reset(); // Reset topic to show loading state and clear old texts
     try {
+      const { recentTopics } = useAppStore.getState();
       const res = await fetch('/api/topic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ style: styleToUse, level: levelToUse })
+        body: JSON.stringify({ style: styleToUse, level: levelToUse, recentTopics })
       });
       const data = await res.json();
       if (data.topic) {

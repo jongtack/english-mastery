@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
-    const { style, level } = await req.json();
+    const { style, level, recentTopics = [] } = await req.json();
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
@@ -245,11 +245,15 @@ export async function POST(req: Request) {
     
     const randomSeed = Math.floor(Math.random() * 100000);
     
+    const exclusionPrompt = recentTopics.length > 0 
+      ? `\nCRITICAL: DO NOT generate a topic that is similar to any of these recently generated topics:\n${recentTopics.map((t: string) => `- ${t}`).join('\n')}\nPick a completely different subject, setting, and nuance.`
+      : '';
+
     const prompt = `Generate a single, random, highly engaging English writing prompt. 
     The prompt MUST be designed for: ${targetPrompt}.
     Format requirement: The prompt MUST be of this specific format/style: "${randomFormat}".
     Make the topic highly specific, relatable, and thought-provoking so the user has a lot to write about. DO NOT generate generic topics.
-    Use this random seed to ensure the topic is entirely different from previous ones: ${randomSeed}.
+    Use this random seed to ensure the topic is entirely different from previous ones: ${randomSeed}.${exclusionPrompt}
     Return ONLY the prompt text without any quotes, numbering, or extra words. Output should be in English.`;
     
     const result = await model.generateContent(prompt);

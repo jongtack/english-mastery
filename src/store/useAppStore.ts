@@ -13,6 +13,7 @@ interface AppState {
   isSubmitting: boolean;
   style: 'Essay' | 'Conversation';
   level: 'Beginner' | 'Intermediate';
+  recentTopics: string[];
   setTopic: (topic: string) => void;
   setEnglishText: (text: string) => void;
   setFeedbackData: (data: FeedbackData | null) => void;
@@ -29,7 +30,12 @@ export const useAppStore = create<AppState>((set) => ({
   isSubmitting: false,
   style: 'Essay',
   level: 'Beginner',
-  setTopic: (topic) => set((state) => state.topic === topic ? state : { topic }),
+  recentTopics: [],
+  setTopic: (topic) => set((state) => {
+    if (state.topic === topic) return state;
+    const newRecent = [topic, ...state.recentTopics].slice(0, 15);
+    return { topic, recentTopics: newRecent };
+  }),
   setEnglishText: (englishText) => set((state) => state.englishText === englishText ? state : { englishText }),
   setFeedbackData: (feedbackData) => set((state) => state.feedbackData === feedbackData ? state : { feedbackData }),
   setIsSubmitting: (isSubmitting) => set((state) => state.isSubmitting === isSubmitting ? state : { isSubmitting }),
