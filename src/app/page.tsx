@@ -31,6 +31,8 @@ export default function Home() {
     isSubmitting, setIsSubmitting, 
     style, setStyle,
     level, setLevel,
+    conversationHistory, setConversationHistory,
+    isAITyping, setIsAITyping,
     reset 
   } = useAppStore();
   
@@ -38,12 +40,14 @@ export default function Home() {
   const [accessCode, setAccessCode] = useState(['', '', '', '']);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [authError, setAuthError] = useState('');
-
+  const [chatInput, setChatInput] = useState('');
+  
   const [view, setView] = useState<'practice' | 'history' | 'analytics'>('practice');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [historyData, setHistoryData] = useState<any[]>([]);
   const feedbackRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -51,6 +55,26 @@ export default function Home() {
       textareaRef.current.style.height = `${Math.max(150, textareaRef.current.scrollHeight)}px`;
     }
   }, [englishText]);
+
+  useEffect(() => {
+    if (chatInputRef.current) {
+      chatInputRef.current.style.height = 'auto';
+      chatInputRef.current.style.height = `${Math.max(48, Math.min(150, chatInputRef.current.scrollHeight))}px`;
+    }
+  }, [chatInput]);
+
+  useEffect(() => {
+    if (style === 'Conversation') {
+      setTimeout(() => {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      }, 50);
+
+      // Auto focus when it's user's turn
+      if (!isAITyping && conversationHistory.length > 0 && chatInputRef.current) {
+        chatInputRef.current.focus();
+      }
+    }
+  }, [conversationHistory, isAITyping, style]);
   
   // Calendar States
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -230,6 +254,9 @@ export default function Home() {
       const data = await res.json();
       if (data.topic) {
         setTopic(data.topic);
+        if (styleToUse === 'Conversation' && data.firstMessage) {
+          setConversationHistory([{ role: 'AI', text: data.firstMessage }]);
+        }
       } else if (data.error) {
         alert("Error fetching topic: " + data.error);
         setTopic("Failed to load topic. Please check API Key.");
@@ -253,10 +280,49 @@ export default function Home() {
     }
   }
 
+  const handleSendChat = async () => {
+    if (!chatInput.trim() || isAITyping) return;
+    
+    const newUserMsg: {role: 'AI'|'User', text: string} = { role: 'User', text: chatInput };
+    const newHistory = [...conversationHistory, newUserMsg];
+    setConversationHistory(newHistory);
+    setChatInput('');
+    setIsAITyping(true);
+    
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, history: newHistory, level })
+      });
+      const data = await res.json();
+      if (data.reply) {
+        setConversationHistory([...newHistory, { role: 'AI', text: data.reply }]);
+      } else {
+        alert("Error from chat API: " + data.error);
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Network error talking to AI.");
+    } finally {
+      setIsAITyping(false);
+    }
+  };
+
   const handleSubmit = async () => {
-    if (englishText.trim().length === 0) {
-      alert("영어 영작문을 입력해 주세요.");
-      return;
+    let finalEnglishText = englishText;
+    
+    if (style === 'Conversation') {
+      if (conversationHistory.length === 0) {
+        alert("대화를 시작해 주세요.");
+        return;
+      }
+      finalEnglishText = conversationHistory.map(m => `${m.role}: ${m.text}`).join('\n');
+    } else {
+      if (englishText.trim().length === 0) {
+        alert("영어 영작문을 입력해 주세요.");
+        return;
+      }
     }
     
     setIsSubmitting(true);
@@ -271,7 +337,7 @@ export default function Home() {
       const res = await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, englishText, style })
+        body: JSON.stringify({ topic, englishText: finalEnglishText, conversationHistory, style })
       });
       
       if (!res.ok) throw new Error('Failed to fetch feedback');
@@ -341,7 +407,7 @@ export default function Home() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            topic, englishText, 
+            topic, englishText: finalEnglishText, 
             exampleText: finalExample, 
             feedback: finalFeedback, 
             score: finalScore 
@@ -673,38 +739,76 @@ export default function Home() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   <label style={{ fontWeight: 600, color: 'var(--primary)', fontSize: '1.1rem' }}>✍️ English Writing</label>
                   <p style={{ fontSize: '0.9rem', opacity: 0.8, marginBottom: '0.5rem' }}>주제에 맞춰 영어로 자유롭게 글을 작성해 보세요.</p>
-                  <textarea 
-                    ref={textareaRef}
-                    className="textarea-field" 
-                    value={englishText}
-                    onChange={(e) => setEnglishText(e.target.value)}
-                    onFocus={(e) => {
-                      if (style === 'Conversation' && englishText === '') {
-                        setEnglishText('A: ');
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (style === 'Conversation' && e.key === 'Enter') {
-                        e.preventDefault();
-                        const currentText = englishText;
-                        const aIndex = currentText.lastIndexOf('A: ');
-                        const bIndex = currentText.lastIndexOf('B: ');
-                        let nextSpeaker = 'A: ';
-                        if (aIndex > bIndex) nextSpeaker = 'B: ';
-                        if (bIndex > aIndex) nextSpeaker = 'A: ';
-                        
-                        let newText = currentText + '\n' + nextSpeaker;
-                        if (currentText.trim() === '') {
-                          newText = nextSpeaker;
-                        }
-                        
-                        setEnglishText(newText);
-                      }
-                    }}
-                    placeholder={style === 'Conversation' ? 'A: ' : 'Write your English text here...'}
-                    disabled={feedbackData !== null}
-                    style={{ minHeight: '150px', overflow: 'hidden', resize: 'none' }}
-                  />
+                  {style === 'Conversation' ? (
+                    <div className="textarea-field" style={{ display: 'flex', flexDirection: 'column', padding: '1rem' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        {conversationHistory.map((msg, i) => (
+                          <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'User' ? 'flex-end' : 'flex-start' }}>
+                            <div style={{ 
+                              maxWidth: '80%', 
+                              padding: '0.8rem 1rem', 
+                              borderRadius: '1rem', 
+                              background: msg.role === 'User' ? 'var(--primary)' : 'rgba(99, 102, 241, 0.1)',
+                              color: msg.role === 'User' ? 'white' : 'var(--foreground)'
+                            }}>
+                              <strong style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block', marginBottom: '0.2rem', color: msg.role === 'AI' ? 'var(--primary)' : 'inherit' }}>{msg.role === 'AI' ? 'AI' : 'User'}</strong>
+                              <span style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</span>
+                            </div>
+                          </div>
+                        ))}
+                        {isAITyping && (
+                          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                            <div style={{ padding: '0.8rem 1rem', borderRadius: '1rem', background: 'rgba(99, 102, 241, 0.1)' }}>
+                              <Sparkles className="animate-spin" size={16} color="var(--primary)" /> <span style={{ opacity: 0.8, fontSize: '0.9rem', color: 'var(--primary)' }}>Typing...</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                        <textarea 
+                          ref={chatInputRef}
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendChat();
+                            }
+                          }}
+                          disabled={feedbackData !== null || isAITyping}
+                          placeholder="Type your response... (Shift+Enter for new line)"
+                          style={{ flex: 1, padding: '0.8rem', borderRadius: '0.5rem', border: '1px solid var(--border)', background: 'transparent', color: 'var(--foreground)', fontSize: 'inherit', fontFamily: 'inherit', resize: 'none', minHeight: '48px', overflow: 'hidden' }}
+                        />
+                        <button 
+                          onClick={handleSendChat}
+                          disabled={feedbackData !== null || isAITyping || !chatInput.trim()}
+                          style={{ 
+                            padding: '0 1.5rem', 
+                            borderRadius: '0.5rem', 
+                            background: 'var(--primary)', 
+                            color: 'white', 
+                            fontWeight: 600, 
+                            border: 'none', 
+                            cursor: (feedbackData !== null || isAITyping || !chatInput.trim()) ? 'default' : 'pointer', 
+                            opacity: (feedbackData !== null || isAITyping || !chatInput.trim()) ? 0.5 : 1 
+                          }}
+                        >
+                          Send
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <textarea 
+                      ref={textareaRef}
+                      className="textarea-field" 
+                      value={englishText}
+                      onChange={(e) => setEnglishText(e.target.value)}
+                      placeholder="Write your English text here..."
+                      disabled={feedbackData !== null}
+                      style={{ minHeight: '150px', overflow: 'hidden', resize: 'none' }}
+                    />
+                  )}
                 </div>
 
                 {/* AI Feedback Display */}
@@ -973,7 +1077,7 @@ export default function Home() {
                   </div>
                 )}
                 <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.9rem', opacity: 0.7 }}>
-                  과거부터 현재까지의 번역 점수(100점 만점) 변화 추이입니다.
+                  과거부터 현재까지의 작문 점수(100점 만점) 변화 추이입니다.
                 </p>
               </div>
 

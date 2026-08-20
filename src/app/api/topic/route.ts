@@ -249,15 +249,32 @@ export async function POST(req: Request) {
       ? `\nCRITICAL: DO NOT generate a topic that is similar to any of these recently generated topics:\n${recentTopics.map((t: string) => `- ${t}`).join('\n')}\nPick a completely different subject, setting, and nuance.`
       : '';
 
-    const prompt = `Generate a single, random, highly engaging English writing prompt. 
+    let prompt = `Generate a single, random, highly engaging English writing prompt. 
     The prompt MUST be designed for: ${targetPrompt}.
     Format requirement: The prompt MUST be of this specific format/style: "${randomFormat}".
     Make the topic highly specific, relatable, and thought-provoking so the user has a lot to write about. DO NOT generate generic topics.
-    Use this random seed to ensure the topic is entirely different from previous ones: ${randomSeed}.${exclusionPrompt}
-    Return ONLY the prompt text without any quotes, numbering, or extra words. Output should be in English.`;
+    Use this random seed to ensure the topic is entirely different from previous ones: ${randomSeed}.${exclusionPrompt}`;
+
+    if (style === 'Conversation') {
+      prompt += `\nSince this is a conversation, ALSO generate the very first line of dialogue spoken by Person A to start the conversation based on the topic.
+      Return the response STRICTLY as a JSON object with this structure: {"topic": "...", "firstMessage": "..."}. 
+      Do not include any markdown formatting like \`\`\`json. Return raw JSON.`;
+    } else {
+      prompt += `\nReturn ONLY the prompt text without any quotes, numbering, or extra words. Output should be in English.`;
+    }
     
     const result = await model.generateContent(prompt);
     const text = result.response.text().trim();
+
+    if (style === 'Conversation') {
+      try {
+        const parsed = JSON.parse(text.replace(/```json/gi, '').replace(/```/g, '').trim());
+        return NextResponse.json({ topic: parsed.topic, firstMessage: parsed.firstMessage });
+      } catch (e) {
+        console.error('Failed to parse JSON for conversation topic', e, text);
+        return NextResponse.json({ topic: text, firstMessage: "Hello! Let's talk about this." });
+      }
+    }
 
     return NextResponse.json({ topic: text });
   } catch (error: unknown) {
