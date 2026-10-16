@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
-    const { style, level, recentTopics = [] } = await req.json();
+    const { style, level, vocabLevel = 'High', recentTopics = [] } = await req.json();
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
@@ -241,9 +241,93 @@ export async function POST(req: Request) {
         ];
       }
     }
-    const randomFormat = formats[Math.floor(Math.random() * formats.length)];
-    
     const randomSeed = Math.floor(Math.random() * 100000);
+
+    if (style === 'Vocabulary') {
+      const vocabExclusion = recentTopics.length > 0
+        ? `\nCRITICAL: DO NOT pick any of these recently studied words or topics:\n${recentTopics.map((t: string) => `- ${t}`).join('\n')}\nPick a completely different word.`
+        : '';
+
+      let levelDescription = 'at a US College student level (e.g., SAT, undergraduate academic, or educated professional discourse)';
+      if (vocabLevel === 'Middle') {
+        levelDescription = 'at a US Middle School student level (foundational, practical, everyday intermediate vocabulary and common expressions used in American middle schools)';
+      } else if (vocabLevel === 'High') {
+        levelDescription = 'at a US High School student level (practical, essential academic and everyday upper-intermediate vocabulary used in American high schools)';
+      } else if (vocabLevel === 'Business') {
+        levelDescription = 'at an advanced Business English level (sophisticated vocabulary used in executive meetings, corporate strategy, negotiations, finance, leadership, marketing, and professional workplace communication)';
+      }
+
+      const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'Z'];
+      const randomLetter = letters[Math.floor(Math.random() * letters.length)];
+      const partsOfSpeech = [
+        'Single-word Verb (동사)',
+        'Single-word Adjective (형용사)',
+        'Single-word Noun (명사)',
+        'Multi-word Phrasal Verb (구동사 - 2~3 words, e.g., brush up on, phase out, iron out, boil down to)',
+        'Multi-word Idiom or Set Phrase (숙어/관용구 - 2~5 words, e.g., by the same token, on the same page, cut corners, rule of thumb)'
+      ];
+      const randomPOS = partsOfSpeech[Math.floor(Math.random() * partsOfSpeech.length)];
+      const vocabDomains = vocabLevel === 'Business' ? [
+        'corporate strategy, M&A, or market expansion',
+        'high-stakes negotiation, persuasion, or contract deals',
+        'financial performance, investment, revenue, or risk management',
+        'executive leadership, organizational culture, or team management',
+        'project management, operations, supply chain, or efficiency',
+        'client relations, crisis communication, or stakeholder alignment',
+        'innovation, product launch, or competitive advantage',
+        'workplace diplomacy, performance review, or professional ethics'
+      ] : [
+        'human psychology, emotions, or personality traits',
+        'economics, finance, or business strategy',
+        'law, politics, diplomacy, or governance',
+        'science, medicine, biology, or technology',
+        'literature, rhetoric, logic, or argumentation',
+        'sociology, culture, ethics, or philosophy',
+        'art, aesthetics, history, or architecture',
+        'daily interpersonal dynamics, conflict, or communication',
+        'change, time, growth, or decline',
+        'precision, mystery, truth, or deception'
+      ];
+      const randomDomain = vocabDomains[Math.floor(Math.random() * vocabDomains.length)];
+
+      const vocabPrompt = `Recommend a single, useful English vocabulary item (either a single word, a phrasal verb, or an idiom/expression depending on the constraint below) ${levelDescription}.
+MANDATORY CONSTRAINTS FOR DIVERSITY:
+- Target Type: ${randomPOS}.
+- The first word of the item MUST start with the letter "${randomLetter}" (if no good expression exists at this level for "${randomLetter}", pick the next letter in the alphabet).
+- Thematic domain: ${randomDomain}.
+- NEVER pick overused AI cliché words like "ubiquitous", "ephemeral", "pragmatic", "alleviate", "meticulous", "resilient", "ambiguous", "eloquent", "inevitable", "profound", "mitigate", "exacerbate", "paradigm", "lucid", or "candid".
+- Random seed: ${randomSeed}.${vocabExclusion}
+
+Provide:
+1. "word": The English word, phrasal verb, or idiom (lowercase unless proper noun).
+2. "pronunciation": Phonetic pronunciation symbol (IPA) for the word or phrase.
+3. "levelBadge": CEFR level and 5-star difficulty rating formatted like "B2 Upper-Int · ★★★☆☆", "C1 Advanced · ★★★★☆", or "C2 Mastery · ★★★★★".
+4. "usageTag": A short Korean tag indicating real-world frequency and register (e.g., "일상/회화 빈출 🔥", "비즈니스/뉴스 필수 💼", "학술/에세이 빈출 📚", "고급 문어체/격식 🏛️", "원어민 필수 구동사/숙어 💡").
+5. "meaning": Clear explanation of the word/phrase's meaning, type (명사/동사/형용사/구동사/숙어), and nuance in Korean.
+6. "exampleSentence": A natural, high-quality English example sentence using the word or phrase in context.
+7. "exampleTranslation": Korean translation of the exampleSentence.
+8. "koreanPrompt": A Korean sentence (different from the example sentence!) for the user to translate/write in English using this target word or phrase.
+
+Return the response STRICTLY as raw JSON with this exact structure:
+{"word": "...", "pronunciation": "...", "levelBadge": "...", "usageTag": "...", "meaning": "...", "exampleSentence": "...", "exampleTranslation": "...", "koreanPrompt": "..."}
+Do not include markdown formatting like \`\`\`json.`;
+
+      const result = await model.generateContent(vocabPrompt);
+      const text = result.response.text().trim();
+      try {
+        const parsed = JSON.parse(text.replace(/```json/gi, '').replace(/```/g, '').trim());
+        const formattedTopic = `[Vocabulary - ${vocabLevel}] ${parsed.word} - ${parsed.koreanPrompt}`;
+        return NextResponse.json({
+          topic: formattedTopic,
+          vocabData: parsed
+        });
+      } catch (e) {
+        console.error('Failed to parse JSON for vocabulary', e, text);
+        return NextResponse.json({ error: 'Failed to generate vocabulary data.' }, { status: 500 });
+      }
+    }
+
+    const randomFormat = formats[Math.floor(Math.random() * formats.length)];
     
     const exclusionPrompt = recentTopics.length > 0 
       ? `\nCRITICAL: DO NOT generate a topic that is similar to any of these recently generated topics:\n${recentTopics.map((t: string) => `- ${t}`).join('\n')}\nPick a completely different subject, setting, and nuance.`

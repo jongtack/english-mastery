@@ -5,7 +5,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useAppStore } from '@/store/useAppStore';
-import { Calendar as CalendarIcon, PenTool, Sparkles, CheckCircle2, History, ChevronLeft, ChevronRight, BarChart3, Trash2, RefreshCcw } from 'lucide-react';
+import { Calendar as CalendarIcon, PenTool, Sparkles, CheckCircle2, History, ChevronLeft, ChevronRight, BarChart3, Trash2, RefreshCcw, Volume2 } from 'lucide-react';
 import { 
   format, 
   startOfMonth, 
@@ -31,8 +31,10 @@ export default function Home() {
     isSubmitting, setIsSubmitting, 
     style, setStyle,
     level, setLevel,
+    vocabLevel, setVocabLevel,
     conversationHistory, setConversationHistory,
     isAITyping, setIsAITyping,
+    vocabData, setVocabData,
     reset 
   } = useAppStore();
   
@@ -52,9 +54,10 @@ export default function Home() {
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.max(150, textareaRef.current.scrollHeight)}px`;
+      const minH = style === 'Vocabulary' ? 100 : 150;
+      textareaRef.current.style.height = `${Math.max(minH, textareaRef.current.scrollHeight)}px`;
     }
-  }, [englishText]);
+  }, [englishText, style]);
 
   useEffect(() => {
     if (chatInputRef.current) {
@@ -240,22 +243,47 @@ export default function Home() {
     }
   };
 
-  async function fetchTopic(overrideStyle?: string, overrideLevel?: string) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const speakText = async (text: string) => {
+    try {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      const audio = new Audio(`/api/tts?text=${encodeURIComponent(text)}`);
+      audioRef.current = audio;
+      await audio.play();
+    } catch (err) {
+      console.error('Audio playback failed, falling back to speechSynthesis:', err);
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'en-US';
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+  };
+
+  async function fetchTopic(overrideStyle?: string, overrideLevel?: string, overrideVocabLevel?: string) {
     const styleToUse = overrideStyle || style;
     const levelToUse = overrideLevel || level;
+    const vocabLevelToUse = overrideVocabLevel || vocabLevel;
     reset(); // Reset topic to show loading state and clear old texts
     try {
       const { recentTopics } = useAppStore.getState();
       const res = await fetch('/api/topic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ style: styleToUse, level: levelToUse, recentTopics })
+        body: JSON.stringify({ style: styleToUse, level: levelToUse, vocabLevel: vocabLevelToUse, recentTopics })
       });
       const data = await res.json();
       if (data.topic) {
         setTopic(data.topic);
         if (styleToUse === 'Conversation' && data.firstMessage) {
           setConversationHistory([{ role: 'AI', text: data.firstMessage }]);
+        } else if (styleToUse === 'Vocabulary' && data.vocabData) {
+          setVocabData(data.vocabData);
         }
       } else if (data.error) {
         alert("Error fetching topic: " + data.error);
@@ -337,7 +365,7 @@ export default function Home() {
       const res = await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, englishText: finalEnglishText, conversationHistory, style })
+        body: JSON.stringify({ topic, englishText: finalEnglishText, conversationHistory, style, vocabData })
       });
       
       if (!res.ok) throw new Error('Failed to fetch feedback');
@@ -648,25 +676,27 @@ export default function Home() {
                 {/* Topic Section */}
                 <section className="glass-panel panel-content" style={{ textAlign: 'center', position: 'relative' }}>
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                <h2 style={{ fontSize: '1.2rem', color: 'var(--secondary)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Today&apos;s Topic</h2>
+                <h2 style={{ fontSize: '1.2rem', color: 'var(--secondary)', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>
+                  {style === 'Vocabulary' ? "Today's Vocabulary" : "Today's Topic"}
+                </h2>
                 <button 
                   onClick={() => fetchTopic()} 
                   disabled={!topic}
                   style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: '0.25rem', opacity: topic ? 1 : 0.5 }}
-                  title="Generate new topic"
+                  title={style === 'Vocabulary' ? "Generate new word" : "Generate new topic"}
                 >
                   <RefreshCcw size={18} className={!topic ? 'animate-spin' : ''} />
                 </button>
               </div>
               
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap', width: '100%' }}>
-                {['Essay', 'Conversation'].map(s => (
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '0.4rem', marginBottom: '0.5rem', flexWrap: 'nowrap', width: '100%' }}>
+                {['Vocabulary', 'Essay', 'Conversation'].map(s => (
                   <button
                     key={s}
                     disabled={!topic}
                     onClick={() => {
                       if (style !== s) {
-                        setStyle(s as 'Essay' | 'Conversation');
+                        setStyle(s as 'Essay' | 'Conversation' | 'Vocabulary');
                         fetchTopic(s);
                       }
                     }}
@@ -674,7 +704,7 @@ export default function Home() {
                       background: style === s ? 'var(--primary)' : 'transparent',
                       color: style === s ? 'white' : 'var(--foreground)',
                       border: `1px solid var(--primary)`,
-                      padding: '0.4rem 0.8rem',
+                      padding: '0.4rem 0.7rem',
                       borderRadius: '2rem',
                       fontSize: '0.85rem',
                       fontWeight: 600,
@@ -691,43 +721,176 @@ export default function Home() {
                 ))}
               </div>
               
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '0.25rem', marginBottom: '1.5rem', flexWrap: 'nowrap', width: '100%' }}>
-                {['Beginner', 'Intermediate'].map(l => (
-                  <button
-                    key={l}
-                    disabled={!topic}
-                    onClick={() => {
-                      if (level !== l) {
-                        setLevel(l as 'Beginner' | 'Intermediate');
-                        fetchTopic(style, l);
-                      }
-                    }}
-                    style={{
-                      background: level === l ? 'var(--secondary)' : 'rgba(128, 128, 128, 0.1)',
-                      color: level === l ? 'white' : 'var(--foreground)',
-                      border: 'none',
-                      padding: '0.3rem 0.8rem',
-                      borderRadius: '0.5rem',
-                      fontSize: '0.75rem',
-                      fontWeight: level === l ? 700 : 500,
-                      cursor: !topic ? 'not-allowed' : 'pointer',
-                      transition: 'all 0.2s',
-                      opacity: !topic ? 0.5 : (level === l ? 1 : 0.6),
-                      flex: '0 1 auto',
-                      textAlign: 'center',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    {l}
-                  </button>
-                ))}
-              </div>
+              {style === 'Vocabulary' ? (
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '0.25rem', marginBottom: '1.5rem', flexWrap: 'nowrap', width: '100%' }}>
+                  {['Middle', 'High', 'College', 'Business'].map(vl => (
+                    <button
+                      key={vl}
+                      disabled={!topic}
+                      onClick={() => {
+                        if (vocabLevel !== vl) {
+                          setVocabLevel(vl as 'Middle' | 'High' | 'College' | 'Business');
+                          fetchTopic(style, level, vl);
+                        }
+                      }}
+                      style={{
+                        background: vocabLevel === vl ? 'var(--secondary)' : 'rgba(128, 128, 128, 0.1)',
+                        color: vocabLevel === vl ? 'white' : 'var(--foreground)',
+                        border: 'none',
+                        padding: '0.3rem 0.6rem',
+                        borderRadius: '0.5rem',
+                        fontSize: '0.75rem',
+                        fontWeight: vocabLevel === vl ? 700 : 500,
+                        cursor: !topic ? 'not-allowed' : 'pointer',
+                        transition: 'all 0.2s',
+                        opacity: !topic ? 0.5 : (vocabLevel === vl ? 1 : 0.6),
+                        flex: '0 1 auto',
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {vl}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '0.25rem', marginBottom: '1.5rem', flexWrap: 'nowrap', width: '100%' }}>
+                  {['Beginner', 'Intermediate'].map(l => (
+                    <button
+                      key={l}
+                      disabled={!topic}
+                      onClick={() => {
+                        if (level !== l) {
+                          setLevel(l as 'Beginner' | 'Intermediate');
+                          fetchTopic(style, l);
+                        }
+                      }}
+                      style={{
+                        background: level === l ? 'var(--secondary)' : 'rgba(128, 128, 128, 0.1)',
+                        color: level === l ? 'white' : 'var(--foreground)',
+                        border: 'none',
+                        padding: '0.3rem 0.8rem',
+                        borderRadius: '0.5rem',
+                        fontSize: '0.75rem',
+                        fontWeight: level === l ? 700 : 500,
+                        cursor: !topic ? 'not-allowed' : 'pointer',
+                        transition: 'all 0.2s',
+                        opacity: !topic ? 0.5 : (level === l ? 1 : 0.6),
+                        flex: '0 1 auto',
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              )}
               
               {topic ? (
-                <p style={{ fontSize: '1rem', fontWeight: '600', lineHeight: 1.4 }}>&quot;{topic}&quot;</p>
+                style === 'Vocabulary' && vocabData ? (
+                  <div style={{ textAlign: 'left', background: 'var(--surface)', padding: '1.5rem', borderRadius: '1rem', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <h3 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--primary)', margin: 0, wordSpacing: '0.2em' }}>
+                          {vocabData.word}
+                        </h3>
+                        <span style={{ fontSize: '1.1rem', opacity: 0.7, fontFamily: 'monospace', wordSpacing: '0.15em' }}>
+                          {vocabData.pronunciation}
+                        </span>
+                        <button
+                          onClick={() => speakText(vocabData.word)}
+                          style={{
+                            background: 'rgba(99, 102, 241, 0.15)',
+                            color: 'var(--primary)',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '36px',
+                            height: '36px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                          title="발음 듣기 (Listen)"
+                        >
+                          <Volume2 size={20} />
+                        </button>
+                      </div>
+
+                      {(vocabData.levelBadge || vocabData.usageTag) && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                          {vocabData.levelBadge && (
+                            <span style={{
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              padding: '0.25rem 0.65rem',
+                              borderRadius: '2rem',
+                              background: 'rgba(99, 102, 241, 0.12)',
+                              color: 'var(--primary)',
+                              border: '1px solid rgba(99, 102, 241, 0.25)',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {vocabData.levelBadge}
+                            </span>
+                          )}
+                          {vocabData.usageTag && (
+                            <span style={{
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              padding: '0.25rem 0.65rem',
+                              borderRadius: '2rem',
+                              background: 'rgba(236, 72, 153, 0.1)',
+                              color: 'var(--secondary)',
+                              border: '1px solid rgba(236, 72, 153, 0.25)',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {vocabData.usageTag}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--secondary)', display: 'block', marginBottom: '0.25rem' }}>
+                        뜻 (Meaning)
+                      </span>
+                      <p style={{ fontSize: '1.05rem', fontWeight: 500, margin: 0, lineHeight: 1.5 }}>
+                        {vocabData.meaning}
+                      </p>
+                    </div>
+
+                    <div style={{ background: 'rgba(99, 102, 241, 0.06)', padding: '1rem', borderRadius: '0.75rem', borderLeft: '3px solid var(--primary)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--primary)' }}>
+                          예문 (Example)
+                        </span>
+                        <button
+                          onClick={() => speakText(vocabData.exampleSentence)}
+                          style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', opacity: 0.8 }}
+                          title="예문 듣기"
+                        >
+                          <Volume2 size={15} /> 듣기
+                        </button>
+                      </div>
+                      <p style={{ fontSize: '1rem', fontWeight: 600, margin: '0 0 0.3rem 0', lineHeight: 1.5 }}>
+                        &ldquo;{vocabData.exampleSentence}&rdquo;
+                      </p>
+                      {vocabData.exampleTranslation && (
+                        <p style={{ fontSize: '0.9rem', opacity: 0.75, margin: 0, lineHeight: 1.4 }}>
+                          {vocabData.exampleTranslation}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: '1rem', fontWeight: '600', lineHeight: 1.4 }}>&quot;{topic}&quot;</p>
+                )
               ) : (
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', height: '60px' }}>
-                  <Sparkles className="animate-spin" /> Generating topic...
+                  <Sparkles className="animate-spin" /> {style === 'Vocabulary' ? 'Generating word...' : 'Generating topic...'}
                 </div>
               )}
             </section>
@@ -737,8 +900,21 @@ export default function Home() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <label style={{ fontWeight: 600, color: 'var(--primary)', fontSize: '1.1rem' }}>✍️ English Writing</label>
-                  <p style={{ fontSize: '0.9rem', opacity: 0.8, marginBottom: '0.5rem' }}>주제에 맞춰 영어로 자유롭게 글을 작성해 보세요.</p>
+                  <label style={{ fontWeight: 600, color: 'var(--primary)', fontSize: '1.1rem' }}>
+                    {style === 'Vocabulary' ? '✍️ Sentence Practice (단어 활용 영작)' : '✍️ English Writing'}
+                  </label>
+                  {style === 'Vocabulary' && vocabData ? (
+                    <div style={{ marginBottom: '0.75rem' }}>
+                      <p style={{ fontSize: '0.9rem', opacity: 0.8, marginBottom: '0.5rem' }}>
+                        제시된 단어 <strong style={{ color: 'var(--primary)' }}>{vocabData.word}</strong>을(를) 활용하여 아래 한국어 문장을 영어로 작성해 보세요.
+                      </p>
+                      <div style={{ padding: '1rem 1.25rem', background: 'rgba(236, 72, 153, 0.08)', border: '1px solid rgba(236, 72, 153, 0.25)', borderRadius: '0.75rem', fontWeight: 600, fontSize: '1.05rem', lineHeight: 1.5 }}>
+                        🇰🇷 &ldquo;{vocabData.koreanPrompt}&rdquo;
+                      </div>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: '0.9rem', opacity: 0.8, marginBottom: '0.5rem' }}>주제에 맞춰 영어로 자유롭게 글을 작성해 보세요.</p>
+                  )}
                   {style === 'Conversation' ? (
                     <div className="textarea-field" style={{ display: 'flex', flexDirection: 'column', padding: '1rem' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -804,9 +980,9 @@ export default function Home() {
                       className="textarea-field" 
                       value={englishText}
                       onChange={(e) => setEnglishText(e.target.value)}
-                      placeholder="Write your English text here..."
+                      placeholder={style === 'Vocabulary' && vocabData ? `Write your English sentence using "${vocabData.word}"...` : "Write your English text here..."}
                       disabled={feedbackData !== null}
-                      style={{ minHeight: '150px', overflow: 'hidden', resize: 'none' }}
+                      style={{ minHeight: style === 'Vocabulary' ? '100px' : '150px', overflow: 'hidden', resize: 'none' }}
                     />
                   )}
                 </div>

@@ -10,9 +10,10 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
-    const { topic, englishText, conversationHistory, style } = await req.json();
+    const { topic, englishText, conversationHistory, style, vocabData } = await req.json();
     
     const isConversation = style === 'Conversation';
+    const isVocabulary = style === 'Vocabulary';
     
     let userContentToEvaluate = '';
     
@@ -24,6 +25,13 @@ export async function POST(req: Request) {
       userContentToEvaluate = `Here is the full conversation. You played 'AI' and the user played 'User'.\n` + 
                               conversationHistory.map(msg => `${msg.role}: ${msg.text}`).join('\n') + 
                               `\n\nPlease evaluate ONLY the user's ('User') responses.`;
+    } else if (isVocabulary && vocabData) {
+      if (!englishText) {
+        return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400 });
+      }
+      userContentToEvaluate = `Target Vocabulary Word: "${vocabData.word}" (${vocabData.meaning})\n` +
+                              `Korean Sentence Prompt to Translate/Write: "${vocabData.koreanPrompt}"\n` +
+                              `User's English Sentence:\n"${englishText}"`;
     } else {
       if (!topic || !englishText) {
         return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400 });
@@ -33,6 +41,8 @@ export async function POST(req: Request) {
 
     const exampleInstruction = isConversation 
       ? "Provide a high-quality example of how native speakers might casually converse about this topic. The example MUST be formatted as a short dialogue (AI: ... User: ...) of no more than 10 lines."
+      : isVocabulary
+      ? `Provide 1 or 2 natural, high-quality native English sentences that accurately translate the Korean prompt ("${vocabData?.koreanPrompt || ''}") using the word "${vocabData?.word || ''}".`
       : "Provide a high-quality example of how a native speaker might write about this topic. The example MUST be a single paragraph of no more than 10 sentences.";
 
     const prompt = `You are an expert English tutor. The user has participated in an English writing exercise based on the following topic:
@@ -42,7 +52,11 @@ export async function POST(req: Request) {
     ${userContentToEvaluate}
     
     Your task is to evaluate the user's English.
-    ${isConversation ? 'Focus specifically on natural, everyday spoken English, idioms, and casual conversational flow of the user.' : 'Focus on overall quality, grammar, and natural phrasing.'}
+    ${isConversation 
+      ? 'Focus specifically on natural, everyday spoken English, idioms, and casual conversational flow of the user.' 
+      : isVocabulary 
+      ? `Focus specifically on whether the user accurately translated the Korean prompt ("${vocabData?.koreanPrompt || ''}") and used the target vocabulary word ("${vocabData?.word || ''}") with the correct part of speech, nuance, collocation, and grammar.`
+      : 'Focus on overall quality, grammar, and natural phrasing.'}
 
     1. Provide a score from 0 to 100 representing the overall quality.
     2. Provide detailed tips to improve their text (grammar corrections, better vocabulary, natural phrasing). Write this feedback in Korean.
@@ -57,7 +71,7 @@ export async function POST(req: Request) {
 [Detailed explanation, grammar corrections, and tips for better expressions. Write this feedback in Korean.]
 
 ---EXAMPLE---
-[${isConversation ? 'A high-quality, native-like dialogue example for the given topic. Max 10 lines.' : 'A high-quality, native-like example of writing for the given topic. MUST be exactly 1 paragraph and 10 sentences or fewer.'}]
+[${isConversation ? 'A high-quality, native-like dialogue example for the given topic. Max 10 lines.' : isVocabulary ? 'High-quality model English sentence(s) translating the Korean prompt using the target word.' : 'A high-quality, native-like example of writing for the given topic. MUST be exactly 1 paragraph and 10 sentences or fewer.'}]
     `;
 
     const result = await streamText({
